@@ -63,26 +63,56 @@ def _init_engine() -> None:
 
 
 def _background_scheduler() -> None:
-    """Re-run the pipeline every 60 s to keep the model learning."""
+    """Re-run the pipeline every 30 s and auto-save state periodically."""
+    _LEARN_INTERVAL = 30   # seconds between learning cycles
+    _SAVE_INTERVAL  = 300  # seconds between explicit saves (5 min)
+
+    # Rotate through representative UK properties for varied training
+    _BG_PROPERTIES = [
+        ("SW1A1AA", 450_000.0, 420_000.0, "investor"),
+        ("M11AE",   195_000.0, 200_000.0, "home_mover"),
+        ("LS11AA",  250_000.0, 245_000.0, "investor"),
+        ("EC1A1BB", 320_000.0, 310_000.0, "first_time_buyer"),
+        ("B11AA",   175_000.0, 180_000.0, "investor"),
+    ]
+
     # Wait for engine to be ready
-    for _ in range(30):
+    for _ in range(60):
         if _engine_ready:
             break
-        time.sleep(2)
+        time.sleep(1)
+
+    last_save = time.time()
+    rotation = 0
 
     while True:
-        time.sleep(60)
+        time.sleep(_LEARN_INTERVAL)
         try:
             with _engine_lock:
                 eng = _engine
-            if eng:
-                eng.pipeline.run(
-                    postcode="SW1A1AA",
-                    current_valuation=285_000.0,
-                    comparable_average=290_000.0,
-                    user_type="investor",
-                )
-                logger.debug("Background learning cycle complete (cycles=%d)", eng.pipeline.model_agent._n_trained)
+            if not eng:
+                continue
+
+            postcode, val, comp, utype = _BG_PROPERTIES[rotation % len(_BG_PROPERTIES)]
+            rotation += 1
+
+            eng.pipeline.run(
+                postcode=postcode,
+                current_valuation=val,
+                comparable_average=comp,
+                user_type=utype,
+            )
+            logger.debug(
+                "Background learning cycle %d complete (postcode=%s)",
+                eng.pipeline.model_agent._n_trained,
+                postcode,
+            )
+
+            # Periodic explicit save
+            if time.time() - last_save > _SAVE_INTERVAL:
+                eng.save()
+                last_save = time.time()
+
         except Exception as exc:
             logger.warning("Background scheduler error: %s", exc)
 

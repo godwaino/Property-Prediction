@@ -3,7 +3,7 @@ builder = "NIXPACKS"
 buildCommand = "pip install -r requirements.txt"
 
 [deploy]
-startCommand = "python app.py"
+startCommand = "gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --worker-class gthread --timeout 120 --keep-alive 5 app:app"
 healthcheckPath = "/api/prediction/health"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"

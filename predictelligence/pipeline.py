@@ -1,9 +1,11 @@
 """
 PropertyPipeline — runs PipelineState through all agents in sequence.
+Supports save/load of agent state for persistence across restarts.
 """
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 
 from predictelligence.pipeline_state import PipelineState
@@ -15,6 +17,9 @@ from predictelligence.agents.evaluator_agent import EvaluatorAgent
 
 logger = logging.getLogger("predictelligence.pipeline")
 
+# How many cycles between auto-saves (saves every N training cycles)
+_SAVE_EVERY_N_CYCLES = 10
+
 
 class PropertyPipeline:
     """
@@ -22,16 +27,12 @@ class PropertyPipeline:
     (scaler fit, rolling BoE history, model weights) across calls.
     """
 
-    def __init__(self, db_path: Optional[str] = None) -> None:
+    def __init__(self, db_path: Optional[str] = None, state_dir: Optional[str] = None) -> None:
         self.data_agent = DataAgent()
         self.preprocess_agent = PreprocessAgent()
         self.model_agent = ModelAgent()
         self.signal_agent = SignalAgent()
-
-        if db_path:
-            self.evaluator_agent = EvaluatorAgent(db_path=db_path)
-        else:
-            self.evaluator_agent = EvaluatorAgent()
+        self.evaluator_agent = EvaluatorAgent(db_path=db_path) if db_path else EvaluatorAgent()
 
         self._agents = [
             self.data_agent,
@@ -40,6 +41,35 @@ class PropertyPipeline:
             self.signal_agent,
             self.evaluator_agent,
         ]
+
+        # Persistence paths
+        if state_dir:
+            self._model_path = os.path.join(state_dir, "model.pkl")
+            self._scaler_path = os.path.join(state_dir, "scaler.pkl")
+        else:
+            self._model_path = None
+            self._scaler_path = None
+
+    def load_state(self) -> bool:
+        """Restore model and scaler from disk. Returns True if both loaded."""
+        if not self._model_path or not self._scaler_path:
+            return False
+        m = self.model_agent.load(self._model_path)
+        s = self.preprocess_agent.load(self._scaler_path)
+        if m and s:
+            logger.info(
+                "State restored from disk. Model cycles: %d",
+                self.model_agent._n_trained,
+            )
+        return m and s
+
+    def save_state(self) -> None:
+        """Persist model and scaler to disk."""
+        if not self._model_path or not self._scaler_path:
+            return
+        self.model_agent.save(self._model_path)
+        self.preprocess_agent.save(self._scaler_path)
+        logger.debug("State saved to disk (cycles=%d)", self.model_agent._n_trained)
 
     def run(
         self,
@@ -61,5 +91,13 @@ class PropertyPipeline:
             except Exception as exc:
                 logger.exception("Unhandled error in agent %s: %s", agent.name, exc)
                 state.pipeline_errors.append(f"{agent.name}: {exc}")
+
+        # Auto-save every N cycles so we don't lose training progress
+        if (
+            self._model_path
+            and state.model_ready
+            and self.model_agent._n_trained % _SAVE_EVERY_N_CYCLES == 0
+        ):
+            self.save_state()
 
         return state
