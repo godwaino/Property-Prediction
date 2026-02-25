@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Predictelligence Property — Analysis #{{ row.id }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <div class="wrap">
+
+    <header class="top">
+      <div class="brand">
+        <div class="brand-dot"></div>
+        <div>
+          <h1>Predictelligence <span>Property</span></h1>
+          <p class="sub">Saved Analysis #{{ row.id }}</p>
+        </div>
+      </div>
+      <div>
+        <a class="btn" href="/">← Dashboard</a>
+        <a class="btn" href="/a/{{ row.id }}/json">JSON</a>
+        <a class="btn" href="/a/{{ row.id }}/md">Markdown</a>
+      </div>
+    </header>
+
+    <!-- Summary card -->
+    <section class="card">
+      <div class="card-header">
+        <span class="card-title">Analysis Summary</span>
+        {% if row.valuation %}
+        <span class="badge {% if row.valuation.score >= 70 %}badge-green{% elif row.valuation.score >= 45 %}badge-amber{% else %}badge-red{% endif %}">
+          {{ row.valuation.score }}/100
+        </span>
+        {% endif %}
+      </div>
+
+      <table>
+        <tbody>
+          <tr>
+            <th>Rightmove URL</th>
+            <td><a href="{{ row.url }}" target="_blank" rel="noreferrer" class="muted">{{ row.url[:80] }}{% if row.url|length > 80 %}…{% endif %}</a></td>
+          </tr>
+          {% if row.valuation %}
+          <tr>
+            <th>Score</th>
+            <td>{{ row.valuation.score }}/100 — {{ row.valuation.label }}</td>
+          </tr>
+          <tr>
+            <th>Fair Value (mid)</th>
+            <td>{% if row.valuation.fair_value_mid %}£{{ "{:,}".format(row.valuation.fair_value_mid|int) }}{% else %}—{% endif %}</td>
+          </tr>
+          {% endif %}
+          {% if row.facts %}
+          <tr>
+            <th>Address</th>
+            <td>{{ row.facts.address or "—" }}</td>
+          </tr>
+          <tr>
+            <th>Asking Price</th>
+            <td>{% if row.facts.price %}£{{ "{:,}".format(row.facts.price|int) }}{% else %}—{% endif %}</td>
+          </tr>
+          <tr>
+            <th>Property Type</th>
+            <td>{{ row.facts.property_type or "—" }}</td>
+          </tr>
+          <tr>
+            <th>Tenure</th>
+            <td>{{ row.facts.tenure or "—" }}</td>
+          </tr>
+          {% endif %}
+          <tr>
+            <th>Analysed</th>
+            <td>{{ row.created_at_utc[:19] if row.created_at_utc else "—" }} UTC</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Markdown report -->
+    <section class="card">
+      <div class="card-header">
+        <span class="card-title">Full Report</span>
+      </div>
+      <pre class="pre">{{ row.md_report }}</pre>
+    </section>
+
+    <!-- Comparables -->
+    {% if row.comps %}
+    <section class="card">
+      <div class="card-header">
+        <span class="card-title">Comparable Sales</span>
+        <span class="badge badge-grey">{{ row.comps|length }}</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Price</th><th>Date</th><th>Postcode</th><th>Type</th><th>Street</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in row.comps[:12] %}
+          <tr>
+            <td>{% if c.price %}£{{ "{:,}".format(c.price|int) }}{% else %}—{% endif %}</td>
+            <td>{{ c.date or "—" }}</td>
+            <td>{{ c.postcode or "—" }}</td>
+            <td>{{ c.property_type or "—" }}</td>
+            <td>{{ c.street or "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+
+    <p class="footer">
+      Educational content only — not financial advice or a professional valuation.
+    </p>
+
+  </div>
+</body>
+</html>

@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Predictelligence Property — UK Property Intelligence</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <div class="wrap">
+
+    <!-- Header -->
+    <header class="top">
+      <div class="brand">
+        <div class="brand-dot"></div>
+        <div>
+          <h1>Predictelligence <span>Property</span></h1>
+          <p class="sub">UK Property Intelligence — PropertyScorecard · Live ML Forecasting</p>
+        </div>
+      </div>
+      <div>
+        <a class="btn" href="/api/prediction/health">Engine Health</a>
+      </div>
+    </header>
+
+    <!-- Analysis form -->
+    <section class="card">
+      <div class="card-header">
+        <span class="card-title">Property Scorecard + Predictelligence Analysis</span>
+        <span class="badge badge-green">AI-POWERED</span>
+      </div>
+
+      <form id="analyze-form">
+        <div class="form-row" style="width:100%; display:flex; gap:10px; flex-wrap:wrap;">
+          <input
+            id="url-input"
+            type="url"
+            placeholder="Paste a Rightmove listing URL…"
+            style="flex:3; min-width:260px;"
+          />
+          <select id="user-type" style="flex:1; min-width:180px;">
+            <option value="investor">Property Investor</option>
+            <option value="first_time_buyer">First-Time Buyer</option>
+            <option value="home_mover">Home Mover</option>
+          </select>
+          <button id="submit-btn" type="submit">Analyse</button>
+        </div>
+      </form>
+
+      <p class="hint" style="margin-top:10px;">
+        ⚠️ Rightmove may rate-limit automated requests. If blocked, try again shortly or run locally.
+        The Predictelligence engine runs live macroeconomic data — no Rightmove access needed for forecasting.
+      </p>
+
+      <!-- States -->
+      <div id="loading-msg" style="display:none; color:var(--muted); margin-top:12px; font-size:13px;">
+        ⏳ Running PropertyScorecard analysis + Predictelligence forecast…
+      </div>
+      <div id="error-msg" class="error-text" style="display:none; margin-top:10px;"></div>
+    </section>
+
+    <!-- Dynamic results -->
+    <div id="result-area"></div>
+
+    <!-- Recent analyses -->
+    {% if analyses %}
+    <section class="card">
+      <div class="card-header">
+        <span class="card-title">Recent Analyses</span>
+        <span class="badge badge-grey">{{ analyses|length }}</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Property</th>
+            <th>Score</th>
+            <th>Verdict</th>
+            <th>Fair Value (mid)</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in analyses %}
+          <tr>
+            <td class="muted">{{ a.created_at_utc[:16] if a.created_at_utc else "—" }}</td>
+            <td>{{ a.property_id or a.url[:50] or "—" }}</td>
+            <td>{{ a.valuation.score if a.valuation else "—" }}</td>
+            <td>{{ a.valuation.label[:35] if a.valuation and a.valuation.label else "—" }}</td>
+            <td>{% if a.valuation and a.valuation.fair_value_mid %}£{{ "{:,}".format(a.valuation.fair_value_mid|int) }}{% else %}—{% endif %}</td>
+            <td><a class="btn" href="/a/{{ a.id }}">View</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% else %}
+    <section class="card">
+      <p class="muted" style="text-align:center; padding:20px 0;">No analyses yet. Paste a Rightmove URL above to get started.</p>
+    </section>
+    {% endif %}
+
+    <!-- Predictelligence standalone -->
+    <section class="card">
+      <div class="card-header">
+        <span class="card-title">⚡ Predictelligence Standalone API</span>
+        <span class="badge badge-blue">REST</span>
+      </div>
+      <p class="muted" style="font-size:13px; margin:0 0 10px;">
+        Run live ML predictions without a Rightmove URL:
+      </p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; font-size:13px;">
+        <a class="btn" href="/api/prediction/predict?postcode=SW1A1AA&current_valuation=450000&user_type=investor">
+          Try Predict API
+        </a>
+        <a class="btn" href="/api/prediction/history?postcode=SW1A1AA">
+          Prediction History
+        </a>
+        <a class="btn" href="/api/prediction/health">
+          Engine Health
+        </a>
+      </div>
+    </section>
+
+    <p class="footer">
+      Predictelligence Property &copy; 2025 — Educational purposes only. Not financial advice or a professional valuation.
+    </p>
+
+  </div><!-- .wrap -->
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
