@@ -9,7 +9,13 @@
 <body>
   <main class="container">
     <h1>Predictelligence Property</h1>
-    <p class="muted">Public dashboard for valuation and forecast. Admin tools are available at <a href="/admin">/admin</a>.</p>
+
+    <section class="card admin-entry">
+      <h2>Admin Access</h2>
+      <p class="muted">Need operational controls for live prediction runs and model diagnostics?</p>
+      <a class="admin-link-btn" href="/admin">Open Admin Dashboard</a>
+      <p class="muted small">If this link does not open in your environment, try <a href="/admin-dashboard">/admin-dashboard</a> or <a href="/dashboard/admin">/dashboard/admin</a>.</p>
+    </section>
 
     <form action="/analyze" method="post" class="card">
       <label>Postcode <input name="postcode" value="SW1A 1AA" required /></label>

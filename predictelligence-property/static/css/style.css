@@ -14,3 +14,9 @@ pre{margin:0;max-height:260px;overflow:auto;background:#11151d;border:1px solid 
 .badge{padding:8px 12px;border-radius:10px;font-weight:700}
 .badge.buy{background:#00C896;color:#05261b}.badge.hold{background:#ffbf47;color:#2a1d00}.badge.sell{background:#FF4444;color:#fff}
 .muted{color:#a0a7b8}
+
+.admin-entry h2{margin-top:0}
+.admin-link-btn{display:inline-block;margin-top:8px;padding:10px 14px;border-radius:8px;background:#2f80ed;color:#fff;text-decoration:none;border:1px solid #4a96fa}
+.admin-link-btn:hover{background:#3a8cf3}
+
+.small{font-size:13px}

@@ -49,6 +49,8 @@ def home():
 
 
 @app.get("/admin")
+@app.get("/admin-dashboard")
+@app.get("/dashboard/admin")
 def admin_dashboard():
     return render_template("admin.html")
 
