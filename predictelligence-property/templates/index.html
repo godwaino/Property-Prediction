@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Predictelligence Property</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+  <main class="container">
+    <h1>Predictelligence Property</h1>
+
+    <section class="card admin-entry">
+      <h2>Admin Access</h2>
+      <p class="muted">Need operational controls for live prediction runs and model diagnostics?</p>
+      <a class="admin-link-btn" href="/admin">Open Admin Dashboard</a>
+      <p class="muted small">If this link does not open in your environment, try <a href="/admin-dashboard">/admin-dashboard</a> or <a href="/dashboard/admin">/dashboard/admin</a>.</p>
+    </section>
+
+    <form action="/analyze" method="post" class="card">
+      <label>Postcode <input name="postcode" value="SW1A 1AA" required /></label>
+      <label>Property type
+        <select name="property_type">
+          <option>Semi-detached</option><option>Detached</option><option>Terraced</option><option>Flat</option>
+        </select>
+      </label>
+      <label>Bedrooms <input type="number" name="bedrooms" min="1" value="3" /></label>
+      <label>Asking price <input type="number" name="asking_price" min="50000" step="1000" value="450000" /></label>
+      <label>User type
+        <select name="user_type">
+          <option value="investor">Property Investor</option>
+          <option value="first_time_buyer">First Time Buyer</option>
+          <option value="home_mover">Home Mover</option>
+        </select>
+      </label>
+      <button type="submit">Analyse</button>
+    </form>
+
+    {% if result %}
+    <section class="card">
+      <h2>Property Scorecard</h2>
+      <p><strong>Estimated Value:</strong> £{{ '{:,.0f}'.format(result.estimated_value) }}</p>
+      <p><strong>Comparables Avg:</strong> £{{ '{:,.0f}'.format(result.comparable_average) }}</p>
+      <p><strong>Confidence:</strong> {{ result.confidence }}%</p>
+      <p><strong>Deal Verdict:</strong> {{ result.deal_verdict }}</p>
+      <p><strong>Negotiation:</strong> {{ result.negotiation_strategy }}</p>
+      <ul>{% for flag in result.risk_flags %}<li>{{ flag }}</li>{% endfor %}</ul>
+    </section>
+
+    <section class="card forecast">
+      <h2>PREDICTELLIGENCE FORECAST</h2>
+      {% set p = result.prediction %}
+      {% if p.model_cycles < 3 %}
+      <div class="muted">Model is calibrating — predictions available shortly</div>
+      {% else %}
+      <div>
+        <h3>90-Day Price Forecast</h3>
+        <p class="big">£{{ '{:,.0f}'.format(p.predicted_value) }}</p>
+        <p>
+          {% if p.direction == 'UP' %}<span class="up">▲ UP</span>{% elif p.direction == 'DOWN' %}<span class="down">▼ DOWN</span>{% else %}<span class="side">→ SIDEWAYS</span>{% endif %}
+          ({{ '%.2f'|format(p.predicted_change_pct) }}%)
+        </p>
+        <div class="bar"><span style="width: {{ p.confidence }}%"></span></div>
+      </div>
+
+      {% if result.user_type == 'investor' %}
+      <div>
+        <h3>Investment Signal</h3>
+        <span class="badge {{ p.investment_signal|lower }}">{{ p.investment_signal }}</span>
+        <div class="bar"><span style="width: {{ p.composite_score * 100 }}%"></span></div>
+        <p>Estimated 12-month ROI: {{ p.user_insights.roi_estimate }}%</p>
+        <p>{{ p.user_insights.headline }}</p>
+      </div>
+      {% else %}
+      <div>
+        <h3>Buyer/Mover Insight</h3>
+        <p>{{ p.user_insights.headline }}</p>
+        <p>{{ p.user_insights.affordability_outlook or p.user_insights.market_timing }}</p>
+      </div>
+      {% endif %}
+
+      <div>
+        <h3>Macro Signals</h3>
+        <p>BoE Rate {{ p.macro_signals.boe_rate }}% {{ p.macro_signals.boe_direction }}</p>
+        <p>Inflation {{ p.macro_signals.inflation_rate }}% {{ p.macro_signals.inflation_trend }}</p>
+        <p>Season {{ p.macro_signals.season }}</p>
+        <p>Affordability {{ p.macro_signals.affordability }}</p>
+      </div>
+      {% endif %}
+    </section>
+    {% endif %}
+  </main>
+</body>
+</html>
