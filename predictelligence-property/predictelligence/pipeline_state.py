@@ -9,6 +9,8 @@ import numpy as np
 @dataclass
 class PipelineState:
     postcode: str = ""
+    property_type: str = "semi-detached"
+    bedrooms: int = 2
     current_valuation: float = 0.0
     comparable_average: float = 0.0
     raw_data: dict = field(default_factory=dict)

@@ -24,6 +24,8 @@ class EvaluatorAgent(BaseAgent):
                 timestamp TEXT,
                 cycle INTEGER,
                 postcode TEXT,
+                property_type TEXT,
+                bedrooms INTEGER,
                 predicted REAL,
                 actual REAL,
                 direction TEXT,
@@ -33,17 +35,26 @@ class EvaluatorAgent(BaseAgent):
             )
             """
         )
+
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(predictions)").fetchall()}
+        if "property_type" not in cols:
+            conn.execute("ALTER TABLE predictions ADD COLUMN property_type TEXT")
+        if "bedrooms" not in cols:
+            conn.execute("ALTER TABLE predictions ADD COLUMN bedrooms INTEGER")
+
         conn.commit()
         conn.close()
 
     def run(self, state: PipelineState) -> PipelineState:
         conn = sqlite3.connect(self.db_path)
         conn.execute(
-            "INSERT INTO predictions(timestamp, cycle, postcode, predicted, actual, direction, signal, confidence, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO predictions(timestamp, cycle, postcode, property_type, bedrooms, predicted, actual, direction, signal, confidence, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 datetime.utcnow().isoformat(),
                 state.cycle,
                 state.postcode,
+                state.property_type,
+                state.bedrooms,
                 state.prediction,
                 state.current_valuation,
                 state.direction,

@@ -18,9 +18,11 @@ class PropertyPipeline:
             EvaluatorAgent(),
         ]
 
-    def run(self, postcode, current_valuation, comparable_average, user_type) -> PipelineState:
+    def run(self, postcode, current_valuation, comparable_average, user_type, property_type="semi-detached", bedrooms=2) -> PipelineState:
         state = PipelineState(
             postcode=postcode.replace(" ", "").upper(),
+            property_type=property_type,
+            bedrooms=int(bedrooms or 2),
             current_valuation=float(current_valuation),
             comparable_average=float(comparable_average),
             user_type=user_type,

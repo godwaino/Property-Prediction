@@ -30,7 +30,7 @@ def warmup_thread():
 
 def scheduled_learning():
     def tick():
-        engine.pipeline.run("SW1A1AA", 285000, 285000, "investor")
+        engine.pipeline.run("SW1A1AA", 285000, 285000, "investor", property_type="semi-detached", bedrooms=2)
 
     schedule.every(60).seconds.do(tick)
     while True:
@@ -46,6 +46,11 @@ logger.info("Predictelligence Property Engine initialised")
 @app.get("/")
 def home():
     return render_template("index.html", result=None)
+
+
+@app.get("/admin")
+def admin_dashboard():
+    return render_template("admin.html")
 
 
 @app.post("/analyze")
@@ -64,6 +69,8 @@ def analyze():
         current_valuation=valuation.estimated_value,
         comparable_average=valuation.comparable_average,
         user_type=user_type,
+        property_type=property_type,
+        bedrooms=bedrooms,
     )
     result["prediction"] = prediction
     result["user_type"] = user_type
@@ -80,7 +87,14 @@ def analyze_api():
 
     valuation = estimate_property_value(postcode, property_type, bedrooms, asking_price, user_type)
     result = serialize_result(valuation)
-    result["prediction"] = engine.analyse(postcode, valuation.estimated_value, valuation.comparable_average, user_type)
+    result["prediction"] = engine.analyse(
+        postcode,
+        valuation.estimated_value,
+        valuation.comparable_average,
+        user_type,
+        property_type=property_type,
+        bedrooms=bedrooms,
+    )
     return jsonify(result)
 
 
@@ -90,7 +104,16 @@ def api_predict():
     current_valuation = float(request.args.get("current_valuation", 285000))
     comparable_average = float(request.args.get("comparable_average", current_valuation))
     user_type = request.args.get("user_type", "investor")
-    return jsonify(engine.analyse(postcode, current_valuation, comparable_average, user_type))
+    property_type = request.args.get("property_type", "semi-detached")
+    bedrooms = int(request.args.get("bedrooms", 2))
+    return jsonify(engine.analyse(
+        postcode,
+        current_valuation,
+        comparable_average,
+        user_type,
+        property_type=property_type,
+        bedrooms=bedrooms,
+    ))
 
 
 @app.get("/api/prediction/history")

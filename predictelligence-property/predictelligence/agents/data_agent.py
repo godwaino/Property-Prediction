@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 import requests
@@ -20,12 +21,24 @@ class DataAgent(BaseAgent):
     def __init__(self):
         super().__init__("DataAgent")
         self.last_inflation = self.DEFAULTS["inflation_rate"]
+        self.last_boe = self.DEFAULTS["boe_rate"]
 
     def _safe_get(self, url: str, timeout: int = 8):
         try:
             return requests.get(url, timeout=timeout)
         except Exception:
             return None
+
+    @staticmethod
+    def _first_reasonable_float(text: str, low: float, high: float):
+        for m in re.findall(r"\d+\.\d+|\d+", text):
+            try:
+                v = float(m)
+            except ValueError:
+                continue
+            if low <= v <= high:
+                return v
+        return None
 
     def run(self, state: PipelineState) -> PipelineState:
         data = dict(self.DEFAULTS)
@@ -39,10 +52,9 @@ class DataAgent(BaseAgent):
         try:
             r = self._safe_get(boe_url)
             if r and r.ok:
-                txt = r.text
-                marker = "BANK RATE"
-                if marker in txt:
-                    data["boe_rate"] = self.DEFAULTS["boe_rate"]
+                parsed = self._first_reasonable_float(r.text, 0.1, 15.0)
+                if parsed is not None:
+                    data["boe_rate"] = parsed
         except Exception:
             pass
 
@@ -52,8 +64,7 @@ class DataAgent(BaseAgent):
                 payload = r.json()
                 obs = payload.get("months", [])
                 if obs:
-                    val = float(obs[-1].get("value", data["inflation_rate"]))
-                    data["inflation_rate"] = val
+                    data["inflation_rate"] = float(obs[-1].get("value", data["inflation_rate"]))
         except Exception:
             pass
 
@@ -61,7 +72,8 @@ class DataAgent(BaseAgent):
             r = self._safe_get(weather_url)
             if r and r.ok:
                 payload = r.json()
-                data["avg_temp"] = float(payload.get("current_weather", {}).get("temperature", data["avg_temp"]))
+                cw = payload.get("current_weather", {})
+                data["avg_temp"] = float(cw.get("temperature", data["avg_temp"]))
         except Exception:
             pass
 
@@ -72,6 +84,9 @@ class DataAgent(BaseAgent):
                 result = payload.get("result", {})
                 data["postcode_valid"] = bool(result)
                 data["region"] = result.get("region")
+                data["longitude"] = float(result.get("longitude", -0.1))
+                data["latitude"] = float(result.get("latitude", 51.5))
+                data["outcode"] = str(result.get("outcode") or state.postcode[:4])
         except Exception:
             data["postcode_valid"] = False
 
@@ -98,7 +113,9 @@ class DataAgent(BaseAgent):
         data["season_factor"] = season_factor
         data["season"] = season
         data["inflation_prev"] = self.last_inflation
+        data["boe_prev"] = self.last_boe
         self.last_inflation = data["inflation_rate"]
+        self.last_boe = data["boe_rate"]
 
         state.raw_data = data
         return state
