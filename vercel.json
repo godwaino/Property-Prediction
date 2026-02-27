@@ -4,6 +4,7 @@
     {"src": "api/index.py", "use": "@vercel/python"}
   ],
   "routes": [
+    {"src": "/_vercel/speed-insights/(.*)", "dest": "/_vercel/speed-insights/$1"},
     {"src": "/(.*)", "dest": "api/index.py"}
   ]
 }
