@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Predictelligence Property — Analysis #{{ row.id }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%2300e5a0'/><text y='24' x='5' font-size='22' font-weight='900' fill='%2307090f'>P</text></svg>" />
+</head>
+<body>
+
+  <div class="bg-canvas" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <div class="wrap content">
+
+    <!-- ── Nav ── -->
+    <nav>
+      <div class="nav-brand">
+        <div class="nav-logo-mark">P</div>
+        <div class="nav-title">Predictelligence <span>Property</span></div>
+      </div>
+      <div class="nav-links">
+        <a class="btn-ghost" href="/">← Dashboard</a>
+        <a class="btn-ghost" href="/a/{{ row.id }}/json">JSON</a>
+        <a class="btn-ghost" href="/a/{{ row.id }}/md">Markdown</a>
+      </div>
+    </nav>
+
+    <!-- ── Hero row ── -->
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-bottom:28px;">
+      <div>
+        <p style="font-size:12px; color:var(--muted); margin-bottom:6px;">Analysis #{{ row.id }} · {{ row.created_at_utc[:16].replace("T"," ") if row.created_at_utc else "" }} UTC</p>
+        <h1 style="font-size:clamp(20px,3.5vw,32px); font-weight:800; letter-spacing:-0.8px; line-height:1.2;">
+          {% if row.facts and row.facts.address %}
+            {{ row.facts.address }}
+          {% else %}
+            Saved Analysis
+          {% endif %}
+        </h1>
+        {% if row.facts and row.facts.price %}
+        <p style="font-size:18px; font-weight:700; color:var(--text); margin-top:6px;">
+          £{{ "{:,}".format(row.facts.price|int) }}
+          {% if row.facts.bedrooms %}<span style="color:var(--muted); font-weight:400; font-size:14px;"> · {{ row.facts.bedrooms }} bed</span>{% endif %}
+          {% if row.facts.property_type %}<span style="color:var(--muted); font-weight:400; font-size:14px;"> {{ row.facts.property_type }}</span>{% endif %}
+        </p>
+        {% endif %}
+      </div>
+      {% if row.valuation %}
+      <div style="text-align:right; flex-shrink:0;">
+        {% set s = row.valuation.score|int %}
+        <div style="font-size:52px; font-weight:900; letter-spacing:-2px; line-height:1;
+          color: {% if s >= 70 %}var(--green){% elif s >= 45 %}var(--amber){% else %}var(--red){% endif %};">
+          {{ s }}
+        </div>
+        <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px;">Score / 100</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- ── Cards grid ── -->
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+
+      <!-- Facts -->
+      <div class="card card-animate">
+        <div class="card-header">
+          <span class="card-title">Property Facts</span>
+          {% if row.facts and row.facts.tenure %}
+          <span class="badge badge-blue">{{ row.facts.tenure[:20] }}</span>
+          {% endif %}
+        </div>
+        {% if row.facts %}
+        {% for key, val in [
+          ("Address",    row.facts.address),
+          ("Bedrooms",   row.facts.bedrooms),
+          ("Bathrooms",  row.facts.bathrooms),
+          ("Type",       row.facts.property_type),
+          ("Tenure",     row.facts.tenure),
+          ("Floor Area", (row.facts.floor_area_sqm|string + " m²") if row.facts.floor_area_sqm else None),
+          ("EPC Rating", row.facts.epc_rating),
+          ("Postcode",   row.facts.postcode),
+        ] %}
+        {% if val %}
+        <div class="fact-row">
+          <span class="fact-key">{{ key }}</span>
+          <span class="fact-val">{{ val }}</span>
+        </div>
+        {% endif %}
+        {% endfor %}
+        {% endif %}
+      </div>
+
+      <!-- Valuation summary -->
+      <div class="card card-animate">
+        <div class="card-header">
+          <span class="card-title">Valuation</span>
+          {% if row.valuation %}
+          <span class="badge {% if row.valuation.score|int >= 70 %}badge-green{% elif row.valuation.score|int >= 45 %}badge-amber{% else %}badge-red{% endif %}">
+            {{ row.valuation.score }}/100
+          </span>
+          {% endif %}
+        </div>
+        {% if row.valuation %}
+        <div class="stat-grid" style="margin-bottom:16px;">
+          {% if row.valuation.fair_value_low %}
+          <div class="stat-box">
+            <div class="stat-label">Fair Value Low</div>
+            <div class="stat-value">£{{ "{:,}".format(row.valuation.fair_value_low|int) }}</div>
+          </div>
+          {% endif %}
+          {% if row.valuation.fair_value_mid %}
+          <div class="stat-box">
+            <div class="stat-label">Fair Value Mid</div>
+            <div class="stat-value" style="color:var(--green);">£{{ "{:,}".format(row.valuation.fair_value_mid|int) }}</div>
+          </div>
+          {% endif %}
+          {% if row.valuation.fair_value_high %}
+          <div class="stat-box">
+            <div class="stat-label">Fair Value High</div>
+            <div class="stat-value">£{{ "{:,}".format(row.valuation.fair_value_high|int) }}</div>
+          </div>
+          {% endif %}
+        </div>
+        <p style="font-size:14px; font-weight:600; margin-bottom:6px;">{{ row.valuation.label or "" }}</p>
+        <p style="font-size:12px; color:var(--muted);">{{ row.valuation.comp_count or 0 }} comparable sale{{ "s" if (row.valuation.comp_count or 0) != 1 else "" }} used</p>
+        {% endif %}
+      </div>
+
+    </div>
+
+    <!-- Offer strategy -->
+    {% if row.valuation and row.valuation.strategy %}
+    {% set strat = row.valuation.strategy %}
+    <div class="card card-animate" style="margin-bottom:16px;">
+      <div class="card-header">
+        <span class="card-title">Offer Strategy</span>
+        {% if strat.asking_discount_pct %}
+        <span class="badge badge-amber">{{ strat.asking_discount_pct }}% below asking</span>
+        {% endif %}
+      </div>
+      <div class="offer-grid">
+        {% if strat.anchor_offer %}
+        <div class="offer-box highlight">
+          <div class="ob-label">Anchor Offer</div>
+          <div class="ob-value">£{{ "{:,}".format(strat.anchor_offer|int) }}</div>
+        </div>
+        {% endif %}
+        {% if strat.offer_range_low and strat.offer_range_high %}
+        <div class="offer-box">
+          <div class="ob-label">Offer Range</div>
+          <div class="ob-value">£{{ "{:,}".format(strat.offer_range_low|int) }} – £{{ "{:,}".format(strat.offer_range_high|int) }}</div>
+        </div>
+        {% endif %}
+      </div>
+      {% if strat.tactic %}
+      <div class="tactic-box"><strong>Tactic:</strong> {{ strat.tactic }}</div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Comparables -->
+    {% if row.comps %}
+    <div class="card card-animate" style="padding:0; overflow:hidden; margin-bottom:16px;">
+      <div style="padding:18px 24px 0; display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;">
+        <span class="card-title">Comparable Sales</span>
+        <span class="badge badge-ghost">{{ row.comps|length }}</span>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Price</th><th>Date</th><th>Postcode</th><th>Type</th><th>Street</th></tr>
+        </thead>
+        <tbody>
+          {% for c in row.comps[:12] %}
+          <tr>
+            <td style="font-weight:600;">{% if c.price %}£{{ "{:,}".format(c.price|int) }}{% else %}—{% endif %}</td>
+            <td style="color:var(--muted);">{{ c.date or "—" }}</td>
+            <td>{{ c.postcode or "—" }}</td>
+            <td>{{ c.property_type or "—" }}</td>
+            <td style="color:var(--muted);">{{ c.street or "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <!-- Full markdown report -->
+    <div class="card card-animate">
+      <div class="card-header">
+        <span class="card-title">Full Report</span>
+        <a class="btn-ghost" href="/a/{{ row.id }}/md">Download .md</a>
+      </div>
+      <pre style="white-space:pre-wrap; font-size:12px; color:var(--muted); line-height:1.7; font-family:ui-monospace,'JetBrains Mono',monospace; overflow:auto;">{{ row.md_report }}</pre>
+    </div>
+
+    <p class="footer-text">
+      Educational content only — not financial advice or a professional valuation.
+    </p>
+
+  </div>
+
+</body>
+</html>
