@@ -21,4 +21,6 @@ This lets valuation and prediction continue without direct portal access.
 - Set env var `PREDICTELLIGENCE_DATA_DIR=/tmp/predictelligence-data` for writable SQLite/cache location in serverless.
 - Background scheduler threads are automatically disabled when `VERCEL` is detected.
 
-- If Vercel shows `FUNCTION_INVOCATION_FAILED`, ensure project root contains `vercel.json`, `.python-version` (3.11), and env var `PREDICTELLIGENCE_DATA_DIR=/tmp/predictelligence-data`.
+- If Vercel shows `FUNCTION_INVOCATION_FAILED`, ensure project root contains `vercel.json`, `.python-version` (3.12), and env var `PREDICTELLIGENCE_DATA_DIR=/tmp/predictelligence-data`.
+
+- Pinned Python: repository `.python-version` is set to `3.12` to match Vercel/uv project constraints.
