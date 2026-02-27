@@ -12,6 +12,19 @@
     <p class="muted">Operational controls for running live prediction, model health checks and history queries.</p>
     <p class="muted"><a href="/">← Back to public dashboard</a></p>
 
+    <section class="card">
+      <h2>Rightmove Workaround: CSV Comparable Import</h2>
+      <p class="muted">If portal access is restricted, export comparable rows to CSV and upload here to keep valuation + model learning moving.</p>
+      <p class="muted small">Expected headers: <code>postcode,property_type,bedrooms,price,date_sold,floor_area_sqft,tenure,new_build</code></p>
+      {% if uploaded or failed %}
+      <p><strong>Upload result:</strong> {{ uploaded }} inserted, {{ failed }} skipped.</p>
+      {% endif %}
+      <form action="/admin/upload-comparables" method="post" enctype="multipart/form-data" class="upload-form">
+        <input type="file" name="comparables_csv" accept=".csv" required />
+        <button type="submit">Upload CSV</button>
+      </form>
+    </section>
+
     <form id="analysisForm" class="card" onsubmit="return false;">
       <label>Postcode <input name="postcode" value="SW1A 1AA" required /></label>
       <label>Property type

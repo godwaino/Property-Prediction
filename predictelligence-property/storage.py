@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
-CACHE_PATH = Path("data/analysis_cache.json")
+from ppd_sqlite import get_data_dir
+
+CACHE_PATH = get_data_dir() / "analysis_cache.json"
 
 
 def load_cache() -> Dict[str, Any]:

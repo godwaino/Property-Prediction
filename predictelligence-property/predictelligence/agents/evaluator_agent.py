@@ -4,14 +4,15 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from ppd_sqlite import get_data_dir
 from predictelligence.agents.base_agent import BaseAgent
 from predictelligence.pipeline_state import PipelineState
 
 
 class EvaluatorAgent(BaseAgent):
-    def __init__(self, db_path: str = "data/predictions.db"):
+    def __init__(self, db_path: str | None = None):
         super().__init__("EvaluatorAgent")
-        self.db_path = Path(db_path)
+        self.db_path = Path(db_path) if db_path else (get_data_dir() / "predictions.db")
         self._init_db()
 
     def _init_db(self):

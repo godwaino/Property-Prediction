@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import csv
+import io
 import logging
+import os
 import threading
 import time
 from datetime import datetime
 
 import schedule
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, redirect, render_template, request, url_for
 
-from ppd_sqlite import init_db
+from ppd_sqlite import ingest_comparable_rows, init_db
 from predictelligence import PredictelligenceEngine
 from propertyscorecard_core import estimate_property_value, serialize_result
 
@@ -19,6 +22,7 @@ app = Flask(__name__)
 init_db()
 start_time = datetime.utcnow()
 engine = PredictelligenceEngine()
+IS_SERVERLESS = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
 
 
 def warmup_thread():
@@ -38,8 +42,12 @@ def scheduled_learning():
         time.sleep(1)
 
 
-threading.Thread(target=warmup_thread, daemon=True).start()
-threading.Thread(target=scheduled_learning, daemon=True).start()
+if not IS_SERVERLESS:
+    threading.Thread(target=warmup_thread, daemon=True).start()
+    threading.Thread(target=scheduled_learning, daemon=True).start()
+else:
+    logger.info("Serverless mode detected: skipping background scheduler threads")
+
 logger.info("Predictelligence Property Engine initialised")
 
 
@@ -52,7 +60,24 @@ def home():
 @app.get("/admin-dashboard")
 @app.get("/dashboard/admin")
 def admin_dashboard():
-    return render_template("admin.html")
+    uploaded = int(request.args.get("uploaded", 0) or 0)
+    failed = int(request.args.get("failed", 0) or 0)
+    return render_template("admin.html", uploaded=uploaded, failed=failed)
+
+
+@app.post("/admin/upload-comparables")
+def admin_upload_comparables():
+    file = request.files.get("comparables_csv")
+    if not file or not file.filename:
+        return redirect(url_for("admin_dashboard", uploaded=0, failed=1))
+
+    try:
+        content = file.stream.read().decode("utf-8-sig", errors="ignore")
+        reader = csv.DictReader(io.StringIO(content))
+        inserted, failed = ingest_comparable_rows(reader)
+        return redirect(url_for("admin_dashboard", uploaded=inserted, failed=failed))
+    except Exception:
+        return redirect(url_for("admin_dashboard", uploaded=0, failed=1))
 
 
 @app.post("/analyze")
@@ -134,4 +159,4 @@ def api_health():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=not IS_SERVERLESS)

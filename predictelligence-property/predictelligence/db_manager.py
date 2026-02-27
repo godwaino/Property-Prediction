@@ -3,10 +3,12 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from ppd_sqlite import get_data_dir
+
 
 class DBManager:
-    def __init__(self, db_path: str = "data/predictions.db"):
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: str | None = None):
+        self.db_path = Path(db_path) if db_path else (get_data_dir() / "predictions.db")
 
     def _conn(self):
         conn = sqlite3.connect(self.db_path)

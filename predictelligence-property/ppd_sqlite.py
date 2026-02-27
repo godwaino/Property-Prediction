@@ -1,11 +1,25 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 from statistics import mean
-from typing import Dict, List
+from typing import Dict, Iterable, List, Tuple
 
-DB_PATH = Path("data/property_prices.db")
+
+def get_data_dir() -> Path:
+    explicit = os.getenv("PREDICTELLIGENCE_DATA_DIR")
+    if explicit:
+        p = Path(explicit)
+    elif os.getenv("VERCEL"):
+        p = Path("/tmp/predictelligence-data")
+    else:
+        p = Path("data")
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+DB_PATH = get_data_dir() / "property_prices.db"
 
 
 def _normalize_postcode(postcode: str) -> str:
@@ -86,6 +100,50 @@ def init_db() -> None:
 
     conn.commit()
     conn.close()
+
+
+def _to_bool_int(value: object) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    txt = str(value or "").strip().lower()
+    return 1 if txt in {"1", "true", "yes", "y"} else 0
+
+
+def ingest_comparable_rows(rows: Iterable[Dict]) -> Tuple[int, int]:
+    conn = get_connection()
+    cur = conn.cursor()
+    inserted = 0
+    failed = 0
+    for row in rows:
+        try:
+            postcode = _normalize_postcode(str(row.get("postcode") or ""))
+            property_type = str(row.get("property_type") or "").strip().lower()
+            bedrooms = int(float(row.get("bedrooms") or 0))
+            price = float(row.get("price") or 0)
+            date_sold = str(row.get("date_sold") or "").strip() or None
+            if not postcode or not property_type or bedrooms <= 0 or price <= 0:
+                failed += 1
+                continue
+
+            floor_area = row.get("floor_area_sqft")
+            floor_area_val = float(floor_area) if str(floor_area or "").strip() else None
+            tenure = str(row.get("tenure") or "").strip() or None
+            new_build = _to_bool_int(row.get("new_build", 0))
+
+            cur.execute(
+                """
+                INSERT INTO property_prices
+                (postcode, postcode_district, property_type, bedrooms, floor_area_sqft, tenure, new_build, price, date_sold)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (postcode, _postcode_district(postcode), property_type, bedrooms, floor_area_val, tenure, new_build, price, date_sold),
+            )
+            inserted += 1
+        except Exception:
+            failed += 1
+    conn.commit()
+    conn.close()
+    return inserted, failed
 
 
 def get_comparable_records(postcode: str, property_type: str, bedrooms: int, limit: int = 60) -> List[Dict]:
