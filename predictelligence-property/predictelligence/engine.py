@@ -7,11 +7,12 @@ from predictelligence.pipeline import PropertyPipeline
 
 
 class PredictelligenceEngine:
-    def __init__(self):
+    def __init__(self, enable_warmup: bool = True):
         self.pipeline = PropertyPipeline()
         self.db = DBManager()
         self._warm_up_done = False
-        self._warm_up()
+        if enable_warmup:
+            self._warm_up()
 
     def _warm_up(self):
         for _ in range(3):

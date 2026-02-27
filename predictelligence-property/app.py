@@ -21,20 +21,20 @@ logger = logging.getLogger("predictelligence-property")
 app = Flask(__name__)
 init_db()
 start_time = datetime.utcnow()
-engine = PredictelligenceEngine()
 IS_SERVERLESS = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+_engine: PredictelligenceEngine | None = None
 
 
-def warmup_thread():
-    try:
-        engine._warm_up()
-    except Exception as exc:
-        logger.exception("Warm-up failed: %s", exc)
+def get_engine() -> PredictelligenceEngine:
+    global _engine
+    if _engine is None:
+        _engine = PredictelligenceEngine(enable_warmup=not IS_SERVERLESS)
+    return _engine
 
 
 def scheduled_learning():
     def tick():
-        engine.pipeline.run("SW1A1AA", 285000, 285000, "investor", property_type="semi-detached", bedrooms=2)
+        get_engine().pipeline.run("SW1A1AA", 285000, 285000, "investor", property_type="semi-detached", bedrooms=2)
 
     schedule.every(60).seconds.do(tick)
     while True:
@@ -43,10 +43,10 @@ def scheduled_learning():
 
 
 if not IS_SERVERLESS:
-    threading.Thread(target=warmup_thread, daemon=True).start()
+    get_engine()
     threading.Thread(target=scheduled_learning, daemon=True).start()
 else:
-    logger.info("Serverless mode detected: skipping background scheduler threads")
+    logger.info("Serverless mode detected: skipping background scheduler threads and eager warmup")
 
 logger.info("Predictelligence Property Engine initialised")
 
@@ -91,7 +91,7 @@ def analyze():
     valuation = estimate_property_value(postcode, property_type, bedrooms, asking_price, user_type)
     result = serialize_result(valuation)
 
-    prediction = engine.analyse(
+    prediction = get_engine().analyse(
         postcode=postcode,
         current_valuation=valuation.estimated_value,
         comparable_average=valuation.comparable_average,
@@ -114,7 +114,7 @@ def analyze_api():
 
     valuation = estimate_property_value(postcode, property_type, bedrooms, asking_price, user_type)
     result = serialize_result(valuation)
-    result["prediction"] = engine.analyse(
+    result["prediction"] = get_engine().analyse(
         postcode,
         valuation.estimated_value,
         valuation.comparable_average,
@@ -133,26 +133,28 @@ def api_predict():
     user_type = request.args.get("user_type", "investor")
     property_type = request.args.get("property_type", "semi-detached")
     bedrooms = int(request.args.get("bedrooms", 2))
-    return jsonify(engine.analyse(
-        postcode,
-        current_valuation,
-        comparable_average,
-        user_type,
-        property_type=property_type,
-        bedrooms=bedrooms,
-    ))
+    return jsonify(
+        get_engine().analyse(
+            postcode,
+            current_valuation,
+            comparable_average,
+            user_type,
+            property_type=property_type,
+            bedrooms=bedrooms,
+        )
+    )
 
 
 @app.get("/api/prediction/history")
 def api_history():
     postcode = request.args.get("postcode", "SW1A1AA")
     limit = int(request.args.get("limit", 20))
-    return jsonify(engine.get_history(postcode, limit))
+    return jsonify(get_engine().get_history(postcode, limit))
 
 
 @app.get("/api/prediction/health")
 def api_health():
-    latest = engine.db.latest_prediction("SW1A1AA")
+    latest = get_engine().db.latest_prediction("SW1A1AA")
     cycles = latest.get("cycle", 0) if latest else 0
     uptime = str(datetime.utcnow() - start_time)
     return jsonify({"status": "ok", "model_cycles": cycles, "model_ready": cycles >= 3, "uptime": uptime})

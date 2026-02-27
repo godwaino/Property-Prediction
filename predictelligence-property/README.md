@@ -20,3 +20,5 @@ This lets valuation and prediction continue without direct portal access.
 - This project includes `api/index.py` and root `vercel.json` to run Flask in Vercel Python runtime.
 - Set env var `PREDICTELLIGENCE_DATA_DIR=/tmp/predictelligence-data` for writable SQLite/cache location in serverless.
 - Background scheduler threads are automatically disabled when `VERCEL` is detected.
+
+- If Vercel shows `FUNCTION_INVOCATION_FAILED`, ensure project root contains `vercel.json`, `.python-version` (3.11), and env var `PREDICTELLIGENCE_DATA_DIR=/tmp/predictelligence-data`.
