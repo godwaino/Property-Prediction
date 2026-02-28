@@ -8,11 +8,9 @@ import threading
 import time
 from datetime import datetime
 
-import schedule
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 
 from ppd_sqlite import ingest_comparable_rows, init_db
-from predictelligence import PredictelligenceEngine
 from propertyscorecard_core import estimate_property_value, serialize_result
 
 logging.basicConfig(level=logging.INFO)
@@ -22,19 +20,35 @@ app = Flask(__name__)
 init_db()
 start_time = datetime.utcnow()
 IS_SERVERLESS = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
-_engine: PredictelligenceEngine | None = None
+_engine = None
+_engine_error: str | None = None
 
 
-def get_engine() -> PredictelligenceEngine:
-    global _engine
-    if _engine is None:
+def get_engine():
+    global _engine, _engine_error
+    if _engine is not None:
+        return _engine
+    if _engine_error is not None:
+        raise RuntimeError(_engine_error)
+    try:
+        from predictelligence import PredictelligenceEngine
+
         _engine = PredictelligenceEngine(enable_warmup=not IS_SERVERLESS)
-    return _engine
+        return _engine
+    except Exception as exc:
+        _engine_error = f"Engine initialization failed: {exc}"
+        logger.exception(_engine_error)
+        raise RuntimeError(_engine_error) from exc
 
 
 def scheduled_learning():
+    import schedule
+
     def tick():
-        get_engine().pipeline.run("SW1A1AA", 285000, 285000, "investor", property_type="semi-detached", bedrooms=2)
+        try:
+            get_engine().pipeline.run("SW1A1AA", 285000, 285000, "investor", property_type="semi-detached", bedrooms=2)
+        except Exception:
+            logger.exception("Scheduled learning tick failed")
 
     schedule.every(60).seconds.do(tick)
     while True:
@@ -43,7 +57,10 @@ def scheduled_learning():
 
 
 if not IS_SERVERLESS:
-    get_engine()
+    try:
+        get_engine()
+    except Exception:
+        logger.exception("Non-serverless startup engine init failed")
     threading.Thread(target=scheduled_learning, daemon=True).start()
 else:
     logger.info("Serverless mode detected: skipping background scheduler threads and eager warmup")
@@ -91,14 +108,17 @@ def analyze():
     valuation = estimate_property_value(postcode, property_type, bedrooms, asking_price, user_type)
     result = serialize_result(valuation)
 
-    prediction = get_engine().analyse(
-        postcode=postcode,
-        current_valuation=valuation.estimated_value,
-        comparable_average=valuation.comparable_average,
-        user_type=user_type,
-        property_type=property_type,
-        bedrooms=bedrooms,
-    )
+    try:
+        prediction = get_engine().analyse(
+            postcode=postcode,
+            current_valuation=valuation.estimated_value,
+            comparable_average=valuation.comparable_average,
+            user_type=user_type,
+            property_type=property_type,
+            bedrooms=bedrooms,
+        )
+    except Exception as exc:
+        prediction = {"error": str(exc), "model_cycles": 0}
     result["prediction"] = prediction
     result["user_type"] = user_type
     return render_template("index.html", result=result)
@@ -114,14 +134,17 @@ def analyze_api():
 
     valuation = estimate_property_value(postcode, property_type, bedrooms, asking_price, user_type)
     result = serialize_result(valuation)
-    result["prediction"] = get_engine().analyse(
-        postcode,
-        valuation.estimated_value,
-        valuation.comparable_average,
-        user_type,
-        property_type=property_type,
-        bedrooms=bedrooms,
-    )
+    try:
+        result["prediction"] = get_engine().analyse(
+            postcode,
+            valuation.estimated_value,
+            valuation.comparable_average,
+            user_type,
+            property_type=property_type,
+            bedrooms=bedrooms,
+        )
+    except Exception as exc:
+        result["prediction"] = {"error": str(exc), "model_cycles": 0}
     return jsonify(result)
 
 
@@ -133,31 +156,40 @@ def api_predict():
     user_type = request.args.get("user_type", "investor")
     property_type = request.args.get("property_type", "semi-detached")
     bedrooms = int(request.args.get("bedrooms", 2))
-    return jsonify(
-        get_engine().analyse(
-            postcode,
-            current_valuation,
-            comparable_average,
-            user_type,
-            property_type=property_type,
-            bedrooms=bedrooms,
+    try:
+        return jsonify(
+            get_engine().analyse(
+                postcode,
+                current_valuation,
+                comparable_average,
+                user_type,
+                property_type=property_type,
+                bedrooms=bedrooms,
+            )
         )
-    )
+    except Exception as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 503
 
 
 @app.get("/api/prediction/history")
 def api_history():
     postcode = request.args.get("postcode", "SW1A1AA")
     limit = int(request.args.get("limit", 20))
-    return jsonify(get_engine().get_history(postcode, limit))
+    try:
+        return jsonify(get_engine().get_history(postcode, limit))
+    except Exception as exc:
+        return jsonify({"status": "error", "message": str(exc), "history": []}), 503
 
 
 @app.get("/api/prediction/health")
 def api_health():
-    latest = get_engine().db.latest_prediction("SW1A1AA")
-    cycles = latest.get("cycle", 0) if latest else 0
     uptime = str(datetime.utcnow() - start_time)
-    return jsonify({"status": "ok", "model_cycles": cycles, "model_ready": cycles >= 3, "uptime": uptime})
+    try:
+        latest = get_engine().db.latest_prediction("SW1A1AA")
+        cycles = latest.get("cycle", 0) if latest else 0
+        return jsonify({"status": "ok", "model_cycles": cycles, "model_ready": cycles >= 3, "uptime": uptime})
+    except Exception as exc:
+        return jsonify({"status": "degraded", "message": str(exc), "model_cycles": 0, "model_ready": False, "uptime": uptime}), 200
 
 
 if __name__ == "__main__":
