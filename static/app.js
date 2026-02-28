@@ -58,34 +58,47 @@ function renderResult(result) {
   area.innerHTML = "";
   area.style.display = "block";
 
-  const facts     = result.facts     || {};
-  const valuation = result.valuation || {};
-  const strategy  = valuation.strategy || {};
-  const comps     = result.comps     || [];
+  const facts      = result.facts      || {};
+  const valuation  = result.valuation  || {};
+  const strategy   = valuation.strategy || {};
+  const comps      = result.comps      || [];
   const prediction = result.prediction;
+  const enrichment = result.enrichment || null;
+  const narrative  = result.ai_narrative || "";
+  const redFlags   = valuation.red_flags || [];
 
-  // ── Actions bar (permalink) ──────────────────────────────────────────────
-  if (result.permalink) {
-    const bar = div("actions-bar card-animate");
-    bar.appendChild(span("id-text", `Analysis #${result.analysis_id}`));
-    const group = div("actions-group");
-    group.appendChild(Object.assign(el("a", { class: "btn-ghost", href: result.permalink }), { textContent: "Permalink" }));
-    group.appendChild(Object.assign(el("a", { class: "btn-ghost", href: result.permalink + "/json" }), { textContent: "JSON" }));
-    group.appendChild(Object.assign(el("a", { class: "btn-ghost", href: result.permalink + "/md" }), { textContent: "Markdown" }));
-    bar.appendChild(group);
-    area.appendChild(bar);
+  // ── Actions bar ───────────────────────────────────────────────────────────
+  const bar = div("actions-bar card-animate");
+  const idGroup = div("actions-group");
+  if (result.analysis_id) {
+    idGroup.appendChild(span("id-text", `Analysis #${result.analysis_id}`));
   }
+  if (result.cache_hit) {
+    idGroup.appendChild(el("span", { class: "cache-badge" }, "⚡ Cached"));
+  }
+  bar.appendChild(idGroup);
+  if (result.permalink) {
+    const linkGroup = div("actions-group");
+    linkGroup.appendChild(Object.assign(el("a", { class: "btn-ghost", href: result.permalink }), { textContent: "Permalink" }));
+    linkGroup.appendChild(Object.assign(el("a", { class: "btn-ghost", href: result.permalink + "/json" }), { textContent: "JSON" }));
+    linkGroup.appendChild(Object.assign(el("a", { class: "btn-ghost", href: result.permalink + "/md" }), { textContent: "Report" }));
+    bar.appendChild(linkGroup);
+  }
+  area.appendChild(bar);
 
   // ── Bento grid ───────────────────────────────────────────────────────────
   const bento = div("bento-grid card-animate");
   const left  = div("bento-left");
   const right = div("bento-right");
 
-  // LEFT: property facts + deal verdict + comparables
+  // LEFT: ordered cards
   left.appendChild(buildFactCard(facts));
+  if (narrative)         left.appendChild(buildAIInsight(narrative));
   left.appendChild(buildVerdictCard(valuation, strategy));
-  if (comps.length) left.appendChild(buildCompsCard(comps));
-  if ((facts.key_features || []).length) left.appendChild(buildFeaturesCard(facts.key_features));
+  if (redFlags.length)   left.appendChild(buildRedFlags(redFlags));
+  if (enrichment)        left.appendChild(buildAreaRisk(enrichment));
+  if (comps.length)      left.appendChild(buildCompsCard(comps));
+  if ((facts.key_features || []).length > 0) left.appendChild(buildFeaturesCard(facts.key_features));
 
   // RIGHT: Predictelligence panel
   right.appendChild(buildPIPanel(prediction, facts));
@@ -93,6 +106,164 @@ function renderResult(result) {
   bento.appendChild(left);
   bento.appendChild(right);
   area.appendChild(bento);
+}
+
+// ── AI Insight card ───────────────────────────────────────────────────────────
+
+function buildAIInsight(narrative) {
+  const card = div("card");
+  card.appendChild(buildCardHeader("AI Analysis",
+    el("span", { class: "badge badge-purple" }, "Claude")));
+
+  const prose = div("narrative-prose");
+
+  // Simple markdown-lite renderer: ##, **, \n\n → paragraphs
+  const segments = narrative.split(/\n\n+/);
+  segments.forEach(seg => {
+    const trimmed = seg.trim();
+    if (!trimmed) return;
+
+    if (trimmed.startsWith("## ") || trimmed.startsWith("### ")) {
+      const heading = el("h4");
+      heading.textContent = trimmed.replace(/^#{2,3}\s+/, "");
+      prose.appendChild(heading);
+      return;
+    }
+
+    // Handle **bold** and bullet lines within a paragraph block
+    const lines = trimmed.split("\n");
+    if (lines.length === 1 && trimmed.startsWith("- ")) {
+      // Single bullet
+      const p = el("p");
+      p.innerHTML = "• " + inlineMd(trimmed.slice(2));
+      prose.appendChild(p);
+    } else if (lines.every(l => l.startsWith("- "))) {
+      // Bullet list block
+      lines.forEach(l => {
+        const p = el("p");
+        p.innerHTML = "• " + inlineMd(l.slice(2));
+        prose.appendChild(p);
+      });
+    } else {
+      const p = el("p");
+      p.innerHTML = inlineMd(trimmed);
+      prose.appendChild(p);
+    }
+  });
+
+  card.appendChild(prose);
+  return card;
+}
+
+function inlineMd(text) {
+  // **bold** → <strong>bold</strong>
+  return text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+}
+
+// ── Red Flags card ────────────────────────────────────────────────────────────
+
+function buildRedFlags(flags) {
+  const card = div("card");
+  const highCount = flags.filter(f => f.severity === "high").length;
+  const badge = el("span", {
+    class: highCount > 0 ? "badge badge-red" : "badge badge-amber"
+  }, `${flags.length} flag${flags.length !== 1 ? "s" : ""}`);
+  card.appendChild(buildCardHeader("Risk Flags", badge));
+
+  const list = div("flag-list");
+  flags.forEach(flag => {
+    const item = div("flag-item");
+    const dotCls = { high: "high", medium: "medium", low: "low" }[flag.severity] || "low";
+    const dot = el("div", { class: `flag-dot ${dotCls}` });
+    const body = div("flag-body");
+    body.appendChild(el("div", { class: "flag-title" }, flag.flag || "Risk factor"));
+    if (flag.impact) {
+      body.appendChild(el("div", { class: "flag-impact" }, flag.impact));
+    }
+    item.appendChild(dot);
+    item.appendChild(body);
+    list.appendChild(item);
+  });
+  card.appendChild(list);
+  return card;
+}
+
+// ── Area Risk card ────────────────────────────────────────────────────────────
+
+function buildAreaRisk(enrichment) {
+  const card = div("card");
+
+  // Header badge: color by worst signal
+  const adj = enrichment.area_score_adjustment || 0;
+  const badgeTxt = adj >= 0 ? `+${adj.toFixed(1)} pts` : `${adj.toFixed(1)} pts`;
+  const badgeCl = adj >= 0 ? "badge-green" : adj >= -3 ? "badge-amber" : "badge-red";
+  card.appendChild(buildCardHeader("Area Profile",
+    el("span", { class: `badge ${badgeCl}` }, badgeTxt)));
+
+  const grid = div("area-grid");
+
+  // Crime chip
+  const crime = enrichment.crime_severity || "unknown";
+  const crimeCl = { low: "good", medium: "warn", high: "bad", unknown: "neutral" }[crime] || "neutral";
+  const crimeCount = enrichment.crime_count_12m != null ? ` (${enrichment.crime_count_12m} in 6mo)` : "";
+  grid.appendChild(buildAreaChip("Crime", crime.charAt(0).toUpperCase() + crime.slice(1) + crimeCount, crimeCl));
+
+  // Flood chip
+  const flood = enrichment.flood_severity || "negligible";
+  const floodCl = { negligible: "good", low: "good", medium: "warn", high: "bad", severe: "bad" }[flood] || "neutral";
+  grid.appendChild(buildAreaChip("Flood Risk", flood.charAt(0).toUpperCase() + flood.slice(1), floodCl));
+
+  // IMD deprivation chip
+  if (enrichment.imd_decile != null) {
+    const imd = enrichment.imd_decile;
+    const imdCl = imd <= 3 ? "bad" : imd <= 6 ? "warn" : "good";
+    grid.appendChild(buildAreaChip("Deprivation", `Decile ${imd}/10`, imdCl));
+  } else {
+    grid.appendChild(buildAreaChip("Deprivation", "No data", "neutral"));
+  }
+
+  // Earnings chip
+  if (enrichment.median_earnings != null) {
+    grid.appendChild(buildAreaChip("Median Earnings", fmtMoney(enrichment.median_earnings) + "/yr", "neutral"));
+  }
+
+  // Planning chip
+  const hasMajor = enrichment.planning_major_nearby;
+  const planCount = enrichment.planning_apps_count || 0;
+  if (planCount > 0 || hasMajor) {
+    const planTxt = hasMajor ? "Major nearby" : `${planCount} app${planCount !== 1 ? "s" : ""}`;
+    grid.appendChild(buildAreaChip("Planning", planTxt, hasMajor ? "warn" : "neutral"));
+  }
+
+  // EPC area chip (from enrichment, not property EPC)
+  if (enrichment.epc_rating) {
+    const epc = enrichment.epc_rating.toUpperCase();
+    const epcCl = ["A","B"].includes(epc) ? "good" : ["F","G"].includes(epc) ? "bad" : "neutral";
+    grid.appendChild(buildAreaChip("Area EPC", epc, epcCl));
+  }
+
+  card.appendChild(grid);
+
+  // Area flags (text notes below grid)
+  const areaFlags = enrichment.area_flags || [];
+  if (areaFlags.length) {
+    const notes = div("area-notes");
+    areaFlags.forEach(f => {
+      const note = div("area-note");
+      note.textContent = "· " + f;
+      notes.appendChild(note);
+    });
+    card.appendChild(notes);
+  }
+
+  return card;
+}
+
+function buildAreaChip(label, value, quality) {
+  const chip = el("div", { class: `area-chip ${quality || "neutral"}` });
+  chip.appendChild(el("div", { class: "area-chip-label" }, label));
+  chip.appendChild(el("div", { class: "area-chip-value" }, value));
+  return chip;
 }
 
 // ── Fact card ─────────────────────────────────────────────────────────────────
