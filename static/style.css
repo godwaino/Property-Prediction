@@ -434,6 +434,108 @@ tr:hover td { background: var(--surface); }
 /* ── Result area ────────────────────────────────────────────────────────────── */
 #result-area { display: none; margin-top: 28px; }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   NEW CARDS: AI Narrative, Red Flags, Area Risk
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* Cache badge in actions bar */
+.cache-badge {
+  font-size: 0.68rem; color: var(--muted);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px; padding: 2px 8px;
+  letter-spacing: 0.02em;
+}
+
+/* ── AI Narrative ─────────────────────────────────────────────────────────── */
+.narrative-prose {
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--muted);
+  word-break: break-word;
+}
+.narrative-prose p {
+  margin: 0 0 0.8rem;
+}
+.narrative-prose p:last-child { margin-bottom: 0; }
+.narrative-prose h4 {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--subtle);
+  margin: 1rem 0 0.3rem;
+}
+.narrative-prose strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ── Red Flags ────────────────────────────────────────────────────────────── */
+.flag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.flag-item {
+  display: grid;
+  grid-template-columns: 10px 1fr;
+  gap: 0 0.8rem;
+  align-items: start;
+}
+.flag-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+.flag-dot.high   { background: var(--red);   box-shadow: 0 0 7px var(--red); }
+.flag-dot.medium { background: var(--amber); }
+.flag-dot.low    { background: var(--blue);  }
+.flag-body { display: flex; flex-direction: column; gap: 2px; }
+.flag-title  { font-size: 0.85rem; font-weight: 600; color: var(--text); line-height: 1.35; }
+.flag-impact { font-size: 0.78rem; color: var(--muted); line-height: 1.45; }
+
+/* ── Area Risk ────────────────────────────────────────────────────────────── */
+.area-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.6rem;
+}
+.area-chip {
+  background: rgba(255,255,255,0.035);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+}
+.area-chip-label {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--subtle);
+  margin-bottom: 4px;
+}
+.area-chip-value { font-size: 0.87rem; font-weight: 600; }
+.area-chip.good    .area-chip-value { color: var(--green); }
+.area-chip.warn    .area-chip-value { color: var(--amber); }
+.area-chip.bad     .area-chip-value { color: var(--red);   }
+.area-chip.neutral .area-chip-value { color: var(--text);  }
+.area-notes {
+  margin-top: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.area-note {
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* ── Modernization tweaks ─────────────────────────────────────────────────── */
+.score-number { font-size: 56px; } /* was 62px — less heavy */
+.card { padding: 1.6rem; }
+.bento-left { gap: 1.1rem; }      /* slightly tighter card spacing */
+
 /* ── Responsive ─────────────────────────────────────────────────────────────── */
 @media (max-width: 880px) {
   .bento-grid { grid-template-columns: 1fr; }
