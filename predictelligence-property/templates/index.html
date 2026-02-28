@@ -1,94 +1,131 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Predictelligence Property</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Predictelligence Property | UK Property Intelligence</title>
+  <meta name="description" content="Enter a UK postcode to get area risk data (crime, flood, deprivation), comparable valuation, and a live ML price forecast — all on one page." />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%2300e5a0'/><text y='24' x='5' font-size='22' font-weight='900' fill='%2307090f'>P</text></svg>" />
 </head>
 <body>
-  <main class="container">
-    <h1>Predictelligence Property</h1>
 
-    <section class="card admin-entry">
-      <h2>Admin Access</h2>
-      <p class="muted">Need operational controls for live prediction runs and model diagnostics?</p>
-      <a class="admin-link-btn" href="/admin">Open Admin Dashboard</a>
-      <p class="muted small">If this link does not open in your environment, try <a href="/admin-dashboard">/admin-dashboard</a> or <a href="/dashboard/admin">/dashboard/admin</a>.</p>
+  <!-- Ambient background orbs -->
+  <div class="bg-canvas" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <div class="wrap content">
+
+    <!-- ── Navigation ── -->
+    <nav>
+      <div class="nav-brand">
+        <div class="nav-logo-mark">P</div>
+        <div class="nav-title">Predictelligence <span>Property</span></div>
+      </div>
+      <div class="nav-links">
+        <span class="nav-pill">UK Market</span>
+        <span class="nav-pill">Area Risk</span>
+        <span class="nav-pill">ML Powered</span>
+        <a class="btn-ghost" href="/api/prediction/health">Engine Status</a>
+      </div>
+    </nav>
+
+    <!-- ── Hero ── -->
+    <section class="hero">
+      <div class="hero-eyebrow">
+        <span class="live-dot"></span>
+        Live ML Forecasting · Area Risk Data · Comparable Valuation
+      </div>
+      <h1 class="hero-title">
+        UK Property Intelligence<br />
+        <span class="grad-text">Everything on One Page</span>
+      </h1>
+      <p class="hero-sub">
+        Enter a postcode to get area risk profiling (crime, flood, deprivation),
+        comparable valuation, and a live ML price forecast — all on one
+        consolidated dashboard.
+      </p>
     </section>
 
-    <form action="/analyze" method="post" class="card">
-      <label>Postcode <input name="postcode" value="SW1A 1AA" required /></label>
-      <label>Property type
-        <select name="property_type">
-          <option>Semi-detached</option><option>Detached</option><option>Terraced</option><option>Flat</option>
-        </select>
-      </label>
-      <label>Bedrooms <input type="number" name="bedrooms" min="1" value="3" /></label>
-      <label>Asking price <input type="number" name="asking_price" min="50000" step="1000" value="450000" /></label>
-      <label>User type
-        <select name="user_type">
-          <option value="investor">Property Investor</option>
-          <option value="first_time_buyer">First Time Buyer</option>
-          <option value="home_mover">Home Mover</option>
-        </select>
-      </label>
-      <button type="submit">Analyse</button>
-    </form>
-
-    {% if result %}
-    <section class="card">
-      <h2>Property Scorecard</h2>
-      <p><strong>Estimated Value:</strong> £{{ '{:,.0f}'.format(result.estimated_value) }}</p>
-      <p><strong>Comparables Avg:</strong> £{{ '{:,.0f}'.format(result.comparable_average) }}</p>
-      <p><strong>Confidence:</strong> {{ result.confidence }}%</p>
-      <p><strong>Deal Verdict:</strong> {{ result.deal_verdict }}</p>
-      <p><strong>Negotiation:</strong> {{ result.negotiation_strategy }}</p>
-      <ul>{% for flag in result.risk_flags %}<li>{{ flag }}</li>{% endfor %}</ul>
-    </section>
-
-    <section class="card forecast">
-      <h2>PREDICTELLIGENCE FORECAST</h2>
-      {% set p = result.prediction %}
-      {% if p.model_cycles < 3 %}
-      <div class="muted">Model is calibrating — predictions available shortly</div>
-      {% else %}
-      <div>
-        <h3>90-Day Price Forecast</h3>
-        <p class="big">£{{ '{:,.0f}'.format(p.predicted_value) }}</p>
-        <p>
-          {% if p.direction == 'UP' %}<span class="up">▲ UP</span>{% elif p.direction == 'DOWN' %}<span class="down">▼ DOWN</span>{% else %}<span class="side">→ SIDEWAYS</span>{% endif %}
-          ({{ '%.2f'|format(p.predicted_change_pct) }}%)
-        </p>
-        <div class="bar"><span style="width: {{ p.confidence }}%"></span></div>
+    <!-- ── Analysis form ── -->
+    <div class="form-card" style="margin-bottom: 28px;">
+      <div class="card-header">
+        <span class="card-title">Analyse a Property</span>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <span class="badge badge-green">Scorecard</span>
+          <span class="badge badge-blue">Area Risk</span>
+          <span class="badge badge-ghost">ML Forecast</span>
+        </div>
       </div>
 
-      {% if result.user_type == 'investor' %}
-      <div>
-        <h3>Investment Signal</h3>
-        <span class="badge {{ p.investment_signal|lower }}">{{ p.investment_signal }}</span>
-        <div class="bar"><span style="width: {{ p.composite_score * 100 }}%"></span></div>
-        <p>Estimated 12-month ROI: {{ p.user_insights.roi_estimate }}%</p>
-        <p>{{ p.user_insights.headline }}</p>
-      </div>
-      {% else %}
-      <div>
-        <h3>Buyer/Mover Insight</h3>
-        <p>{{ p.user_insights.headline }}</p>
-        <p>{{ p.user_insights.affordability_outlook or p.user_insights.market_timing }}</p>
-      </div>
-      {% endif %}
+      <form id="analyze-form">
+        <div class="form-row">
+          <div class="input-wrap" style="flex:1;min-width:140px;">
+            <span class="input-icon">📍</span>
+            <input id="postcode-input" type="text" placeholder="Postcode e.g. SW1A 1AA"
+              value="SW1A 1AA" autocomplete="off" spellcheck="false" required />
+          </div>
+          <div class="select-wrap" style="flex:1;min-width:160px;">
+            <select id="property-type">
+              <option value="Semi-detached">Semi-detached</option>
+              <option value="Detached">Detached</option>
+              <option value="Terraced">Terraced</option>
+              <option value="Flat">Flat</option>
+            </select>
+          </div>
+          <div class="input-wrap" style="flex:0 0 100px;min-width:90px;">
+            <span class="input-icon">🛏</span>
+            <input id="bedrooms-input" type="number" placeholder="Beds"
+              value="3" min="1" max="10" />
+          </div>
+          <div class="input-wrap" style="flex:1;min-width:160px;">
+            <span class="input-icon">£</span>
+            <input id="price-input" type="number" placeholder="Asking price"
+              value="450000" min="50000" step="1000" />
+          </div>
+        </div>
+        <div class="form-row" style="margin-top:10px;">
+          <div class="select-wrap" style="flex:1;min-width:190px;">
+            <select id="user-type">
+              <option value="investor">📈 Property Investor</option>
+              <option value="first_time_buyer">🏠 First-Time Buyer</option>
+              <option value="home_mover">🔑 Home Mover</option>
+            </select>
+          </div>
+          <button id="submit-btn" class="btn-primary" type="submit"
+            style="flex:0 0 auto;">Analyse</button>
+        </div>
+      </form>
 
-      <div>
-        <h3>Macro Signals</h3>
-        <p>BoE Rate {{ p.macro_signals.boe_rate }}% {{ p.macro_signals.boe_direction }}</p>
-        <p>Inflation {{ p.macro_signals.inflation_rate }}% {{ p.macro_signals.inflation_trend }}</p>
-        <p>Season {{ p.macro_signals.season }}</p>
-        <p>Affordability {{ p.macro_signals.affordability }}</p>
+      <div class="loading-msg" id="loading-msg">
+        <div class="spinner"></div>
+        Fetching comparables, area risk data, and ML forecast…
       </div>
-      {% endif %}
-    </section>
-    {% endif %}
-  </main>
+      <div class="error-banner" id="error-msg"></div>
+    </div>
+
+    <!-- ── Dynamic results rendered by app.js ── -->
+    <div id="result-area"></div>
+
+    <!-- ── Standalone API bar ── -->
+    <div class="api-row">
+      <span class="api-row-label">Predictelligence Standalone API →</span>
+      <a class="btn-ghost" href="/api/prediction/predict?postcode=SW1A1AA&current_valuation=450000&user_type=investor">Try Predict API</a>
+      <a class="btn-ghost" href="/api/prediction/history?postcode=SW1A1AA">History</a>
+      <a class="btn-ghost" href="/api/prediction/health">Health Check</a>
+      <a class="btn-ghost" href="/admin">Admin</a>
+    </div>
+
+    <p class="footer-text">
+      Predictelligence Property — Educational purposes only. Not financial advice or a professional valuation.
+    </p>
+
+  </div><!-- .wrap -->
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+
 </body>
 </html>

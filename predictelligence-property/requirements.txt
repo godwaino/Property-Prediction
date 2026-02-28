@@ -4,3 +4,4 @@ numpy
 requests
 schedule
 python-dotenv
+anthropic>=0.40.0
