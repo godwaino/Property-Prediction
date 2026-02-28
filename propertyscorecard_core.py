@@ -1,10 +1,13 @@
 """
 Property Scorecard Core — UK Property Analysis Engine
 Scrapes Rightmove listings and analyses them against Land Registry comparables.
+Enhanced with: IQR outlier filtering, comp similarity scoring,
+location risk adjustments, and red flags.
 """
 from __future__ import annotations
 
 import json
+import math
 import re
 import statistics
 import traceback
@@ -252,6 +255,98 @@ def _infer_postcode(text: str) -> Optional[str]:
     return m.group(1).strip() if m else None
 
 
+# ─── IQR outlier filtering ────────────────────────────────────────────────────
+
+def filter_outliers_iqr(prices: List[float]) -> List[float]:
+    """Remove prices outside Q1 - 1.5×IQR and Q3 + 1.5×IQR."""
+    if len(prices) < 4:
+        return prices
+    q1 = quantile(prices, 0.25)
+    q3 = quantile(prices, 0.75)
+    iqr = q3 - q1
+    lo = q1 - 1.5 * iqr
+    hi = q3 + 1.5 * iqr
+    filtered = [p for p in prices if lo <= p <= hi]
+    return filtered if filtered else prices  # never return empty list
+
+
+# ─── comp similarity scoring ──────────────────────────────────────────────────
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance in km."""
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    return R * 2 * math.asin(math.sqrt(a))
+
+
+def score_comp_similarity(
+    comp: Any,
+    facts: "ListingFacts",
+    avg_comp_price: float,
+    comp_lat: Optional[float] = None,
+    comp_lng: Optional[float] = None,
+    prop_lat: Optional[float] = None,
+    prop_lng: Optional[float] = None,
+) -> int:
+    """
+    Score 0-100 how similar a comp is to the subject property.
+      Type match:      0 or 30 pts
+      Price proximity: 0-30 pts (inversely proportional to % deviation from avg)
+      Recency:         0-20 pts (newer comps score higher)
+      Distance:        0-20 pts (closer comps score higher)
+    """
+    score = 0
+
+    # Type match (+30)
+    comp_type = (
+        comp.property_type if hasattr(comp, "property_type") else comp.get("property_type", "")
+    ) or ""
+    prop_type = facts.property_type or ""
+    if comp_type.lower() == prop_type.lower() and comp_type:
+        score += 30
+
+    # Price proximity (+30)
+    comp_price = float(comp.price if hasattr(comp, "price") else comp.get("price", 0) or 0)
+    if avg_comp_price > 0 and comp_price > 0:
+        pct_diff = abs(comp_price - avg_comp_price) / avg_comp_price
+        price_pts = max(0, 30 - int(pct_diff * 100))
+        score += price_pts
+
+    # Recency (+20): comps within 12 months get full points, decay over 36 months
+    comp_date = comp.date if hasattr(comp, "date") else comp.get("date", "")
+    if comp_date:
+        try:
+            comp_dt = datetime.fromisoformat(str(comp_date)[:10])
+            months_ago = (datetime.now() - comp_dt).days / 30.44
+            if months_ago <= 12:
+                score += 20
+            elif months_ago <= 24:
+                score += 12
+            elif months_ago <= 36:
+                score += 6
+        except ValueError:
+            pass
+
+    # Distance (+20): only if we have coordinates for both
+    if all(v is not None for v in [comp_lat, comp_lng, prop_lat, prop_lng]):
+        try:
+            km = _haversine_km(prop_lat, prop_lng, comp_lat, comp_lng)
+            if km <= 0.25:
+                score += 20
+            elif km <= 0.5:
+                score += 15
+            elif km <= 1.0:
+                score += 10
+            elif km <= 2.0:
+                score += 5
+        except Exception:
+            pass
+
+    return min(100, score)
+
+
 # ─── valuation ────────────────────────────────────────────────────────────────
 
 BASELINE_SQM = 68.0  # UK average floor area
@@ -265,14 +360,18 @@ def estimate_value_from_comps(
         return None
 
     prices = [c.price if hasattr(c, "price") else c.get("price", 0) for c in comps]
-    prices = [p for p in prices if p and p > 10_000]
+    prices = [float(p) for p in prices if p and p > 10_000]
     if not prices:
         return None
 
-    # Light-touch size adjustment
+    # IQR outlier removal before valuation
+    prices = filter_outliers_iqr(prices)
+
+    # Light-touch size adjustment (square-root curve, clamped 0.92–1.10)
     if floor_area_sqm and floor_area_sqm > 20:
-        adj = floor_area_sqm / BASELINE_SQM
-        prices = [int(p * adj) for p in prices]
+        raw_adj = math.sqrt(floor_area_sqm / BASELINE_SQM)
+        adj = max(0.92, min(1.10, raw_adj))
+        prices = [p * adj for p in prices]
 
     low = int(quantile(prices, 0.25))
     mid = int(median(prices))
@@ -299,11 +398,13 @@ SCORE_LABELS = [
 
 
 def reasonableness_score(
-    facts: ListingFacts,
+    facts: "ListingFacts",
     valuation: Optional[Dict[str, Any]],
+    enrichment: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     score = 0
     notes: List[str] = []
+    red_flags: List[Dict[str, str]] = []
     asking = facts.price or 0
     mid = (valuation or {}).get("fair_value_mid") or 0
 
@@ -355,6 +456,11 @@ def reasonableness_score(
     elif "leasehold" in tenure:
         score += 6
         notes.append("Leasehold — check remaining lease length")
+        red_flags.append({
+            "flag": "Leasehold tenure",
+            "impact": "Lease <80 years can cost £10k–£50k+ to extend; check lease length urgently",
+            "severity": "medium",
+        })
     else:
         score += 8
 
@@ -364,6 +470,11 @@ def reasonableness_score(
     score += epc_scores.get(epc, 5)
     if epc in ("F", "G"):
         notes.append("Poor EPC rating — energy costs will be high")
+        red_flags.append({
+            "flag": f"Poor EPC rating ({epc})",
+            "impact": "Energy bills may be £1,500–£3,000/year higher than a C-rated equivalent; retrofitting could cost £10k–£30k",
+            "severity": "high",
+        })
     elif epc in ("A", "B"):
         notes.append("Excellent EPC — low energy bills")
 
@@ -378,6 +489,72 @@ def reasonableness_score(
     else:
         score += 6
 
+    base_score = min(100, max(0, score))
+    score = base_score
+
+    # 6. Location risk adjustment from enrichment data
+    area_adj_pts = 0
+    area_data_summary: Dict[str, Any] = {}
+
+    if enrichment:
+        area_adj_pct = enrichment.get("area_score_adjustment", 0.0)
+        if area_adj_pct:
+            # Convert % adjustment to pts (0.5 multiplier keeps adjustments modest)
+            area_adj_pts = round(area_adj_pct * 0.5)
+            score += area_adj_pts
+
+        area_flags = enrichment.get("area_flags", [])
+        notes.extend(area_flags)
+
+        # Convert area flags into red_flags with impact estimates
+        flood_sev = enrichment.get("flood_severity", "negligible")
+        if flood_sev in ("high", "severe"):
+            red_flags.append({
+                "flag": f"High flood risk ({flood_sev})",
+                "impact": "Can reduce resale value 3–6%; buildings insurance premium significantly higher",
+                "severity": "high",
+            })
+        elif flood_sev == "medium":
+            red_flags.append({
+                "flag": "Medium flood risk",
+                "impact": "Potential insurance premium increase of £200–£800/year",
+                "severity": "medium",
+            })
+
+        imd_decile = enrichment.get("imd_decile")
+        if imd_decile is not None and imd_decile <= 2:
+            red_flags.append({
+                "flag": f"Highly deprived area (IMD decile {imd_decile}/10)",
+                "impact": "May limit capital appreciation; higher void risk for BTL investors",
+                "severity": "medium",
+            })
+
+        crime_sev = enrichment.get("crime_severity", "unknown")
+        if crime_sev == "high":
+            red_flags.append({
+                "flag": "High crime area",
+                "impact": "Higher insurance costs; potential impact on tenant/buyer pool",
+                "severity": "medium",
+            })
+
+        if enrichment.get("planning_major_nearby"):
+            red_flags.append({
+                "flag": "Major planning application nearby",
+                "impact": "Review impact — could affect views, traffic, or neighbourhood character",
+                "severity": "low",
+            })
+
+        area_data_summary = {
+            "crime_severity": enrichment.get("crime_severity", "unknown"),
+            "crime_count_12m": enrichment.get("crime_count_12m"),
+            "flood_severity": enrichment.get("flood_severity", "negligible"),
+            "imd_decile": imd_decile,
+            "planning_major_nearby": enrichment.get("planning_major_nearby", False),
+            "median_earnings": enrichment.get("median_earnings"),
+            "area_flags": area_flags,
+            "fetch_errors": enrichment.get("fetch_errors", []),
+        }
+
     score = min(100, max(0, score))
 
     label = SCORE_LABELS[-1][1]
@@ -388,8 +565,12 @@ def reasonableness_score(
 
     return {
         "score": score,
+        "base_score": base_score,
+        "area_adjustment_pts": area_adj_pts,
         "label": label,
         "notes": notes,
+        "red_flags": red_flags,
+        "area_data": area_data_summary,
         "fair_value_low": (valuation or {}).get("fair_value_low"),
         "fair_value_mid": (valuation or {}).get("fair_value_mid"),
         "fair_value_high": (valuation or {}).get("fair_value_high"),
@@ -448,13 +629,17 @@ def _fmt_money(v: Optional[int]) -> str:
 
 
 def build_md_report(
-    facts: ListingFacts,
+    facts: "ListingFacts",
     comps: List[Any],
     valuation: Optional[Dict[str, Any]],
     score_data: Dict[str, Any],
     strategy: Dict[str, Any],
+    ai_narrative: str = "",
 ) -> str:
     ts = datetime.now(timezone.utc).strftime("%d %b %Y %H:%M UTC")
+    adj_pts = score_data.get("area_adjustment_pts", 0)
+    adj_label = f" ({adj_pts:+d} pts from area risk)" if adj_pts else ""
+
     lines = [
         f"# Property Scorecard Report",
         f"**Generated:** {ts}",
@@ -480,7 +665,7 @@ def build_md_report(
         f"| Fair Value (Low) | {_fmt_money(score_data.get('fair_value_low'))} |",
         f"| Fair Value (Mid) | {_fmt_money(score_data.get('fair_value_mid'))} |",
         f"| Fair Value (High) | {_fmt_money(score_data.get('fair_value_high'))} |",
-        f"| Reasonableness Score | {score_data['score']}/100 — {score_data['label']} |",
+        f"| Reasonableness Score | {score_data['score']}/100{adj_label} — {score_data['label']} |",
         f"| Comparables Used | {score_data.get('comp_count', 0)} |",
         "",
         "## Offer Strategy",
@@ -493,6 +678,36 @@ def build_md_report(
     ]
     for note in score_data.get("notes", []):
         lines.append(f"- {note}")
+
+    # Red flags section
+    red_flags = score_data.get("red_flags", [])
+    if red_flags:
+        lines += ["", "## Red Flags"]
+        for rf in red_flags:
+            sev = rf.get("severity", "").upper()
+            lines.append(f"- **[{sev}] {rf.get('flag', '')}**: {rf.get('impact', '')}")
+
+    # Area risk section
+    area_data = score_data.get("area_data", {})
+    if area_data:
+        lines += ["", "## Area Risk Factors"]
+        if area_data.get("crime_severity") and area_data["crime_severity"] != "unknown":
+            count_str = f" ({area_data['crime_count_12m']} incidents in 6 months)" if area_data.get("crime_count_12m") else ""
+            lines.append(f"- **Crime:** {area_data['crime_severity'].title()}{count_str}")
+        if area_data.get("flood_severity", "negligible") != "negligible":
+            lines.append(f"- **Flood risk:** {area_data['flood_severity'].title()}")
+        if area_data.get("imd_decile") is not None:
+            lines.append(f"- **Deprivation:** IMD decile {area_data['imd_decile']}/10 (10 = least deprived)")
+        if area_data.get("median_earnings"):
+            lines.append(f"- **Median local earnings:** £{area_data['median_earnings']:,.0f}/year")
+        if area_data.get("planning_major_nearby"):
+            lines.append("- **Planning:** Major development application nearby")
+        if adj_pts:
+            lines.append(f"- **Score adjustment:** {adj_pts:+d} points from area risk factors")
+
+    # AI narrative section
+    if ai_narrative:
+        lines += ["", "## AI Analysis", ai_narrative]
 
     if comps:
         lines += [
@@ -522,21 +737,54 @@ def run_propertyscorecard(
     url: str,
     ppd_sqlite_path: Optional[str] = None,
     user_type: str = "investor",
+    enrich_location: bool = True,
+    use_claude: bool = True,
 ) -> Dict[str, Any]:
     """
     Main analysis entry point. Returns a dict with:
-      facts, comps, valuation, md_report, created_at_utc
+      facts, comps, valuation, md_report, created_at_utc, enrichment (optional),
+      ai_narrative (optional)
     """
+    import concurrent.futures
+    import os
+
     ts = datetime.now(timezone.utc).isoformat()
 
     # Fetch and parse
     html = fetch_rightmove_html(url)
     facts = parse_listing(url, html)
 
+    # Claude fallback extraction when key fields are missing
+    if use_claude:
+        try:
+            from claude_ai import extract_listing_details, is_claude_available
+            if is_claude_available() and not facts.price:
+                extracted = extract_listing_details(html[:6000], {
+                    "price": facts.price,
+                    "bedrooms": facts.bedrooms,
+                    "tenure": facts.tenure,
+                    "floor_area_sqm": facts.floor_area_sqm,
+                    "epc_rating": facts.epc_rating,
+                    "postcode": facts.postcode,
+                })
+                if extracted.get("price") and not facts.price:
+                    facts.price = int(extracted["price"])
+                if extracted.get("bedrooms") and not facts.bedrooms:
+                    facts.bedrooms = int(extracted["bedrooms"])
+                if extracted.get("tenure") and not facts.tenure:
+                    facts.tenure = str(extracted["tenure"])
+                if extracted.get("floor_area_sqm") and not facts.floor_area_sqm:
+                    facts.floor_area_sqm = float(extracted["floor_area_sqm"])
+                if extracted.get("epc_rating") and not facts.epc_rating:
+                    facts.epc_rating = str(extracted["epc_rating"])
+                if extracted.get("postcode") and not facts.postcode:
+                    facts.postcode = str(extracted["postcode"])
+        except Exception as exc:
+            print(f"[WARN] Claude extraction fallback failed: {exc}")
+
     # Find comparables
     comps: List[Any] = []
     if ppd_sqlite_path and HAS_PPD:
-        import os
         if os.path.exists(ppd_sqlite_path):
             try:
                 comps = find_comps_sqlite(
@@ -547,17 +795,88 @@ def run_propertyscorecard(
             except Exception as e:
                 print(f"[WARN] PPD lookup failed: {e}")
 
-    # Valuation
-    valuation = estimate_value_from_comps(comps, facts.floor_area_sqm)
+    # Sort comps by similarity score (best matches first), limit to top 20
+    if comps:
+        avg_price = sum(
+            (c.price if hasattr(c, "price") else c.get("price", 0)) for c in comps
+        ) / len(comps) if comps else 0
+        comps = sorted(
+            comps,
+            key=lambda c: score_comp_similarity(c, facts, avg_price),
+            reverse=True,
+        )[:20]
 
-    # Score
-    score_data = reasonableness_score(facts, valuation)
+    # Parallel: location enrichment + Claude AI (both optional, both non-blocking)
+    enrichment_dict: Optional[Dict[str, Any]] = None
+    ai_narrative = ""
+
+    futures = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        if enrich_location and facts.postcode:
+            try:
+                from location_enrichment import enrich_location as _enrich
+                futures["enrich"] = executor.submit(_enrich, facts.postcode)
+            except ImportError:
+                pass
+
+        # Valuation needed before Claude can run — do it synchronously first
+        valuation = estimate_value_from_comps(comps, facts.floor_area_sqm)
+
+        if use_claude:
+            try:
+                from claude_ai import generate_ai_narrative, is_claude_available
+                if is_claude_available():
+                    comps_list_preview = [
+                        (c.__dict__ if hasattr(c, "__dict__") else dict(c))
+                        for c in comps[:8]
+                    ]
+                    futures["claude"] = executor.submit(
+                        generate_ai_narrative,
+                        {
+                            "address": facts.address,
+                            "property_type": facts.property_type,
+                            "bedrooms": facts.bedrooms,
+                            "bathrooms": facts.bathrooms,
+                            "tenure": facts.tenure,
+                            "floor_area_sqm": facts.floor_area_sqm,
+                            "epc_rating": facts.epc_rating,
+                            "postcode": facts.postcode,
+                            "key_features": facts.key_features,
+                            "user_type": user_type,
+                        },
+                        valuation or {},
+                        comps_list_preview,
+                        {},   # score_data not yet computed; passed again after
+                        {},   # strategy not yet computed
+                        None, # enrichment will be merged in later
+                        None, # prediction not available at this stage
+                    )
+            except ImportError:
+                pass
+
+        # Collect enrichment result (timeout 15s)
+        if "enrich" in futures:
+            try:
+                enrich_result = futures["enrich"].result(timeout=15)
+                enrichment_dict = enrich_result.to_dict()
+            except Exception as exc:
+                print(f"[WARN] Location enrichment failed: {exc}")
+
+        # Collect Claude result (timeout 30s)
+        if "claude" in futures:
+            try:
+                ai_narrative = futures["claude"].result(timeout=30) or ""
+            except Exception as exc:
+                print(f"[WARN] Claude narrative failed: {exc}")
+
+    # Score (with enrichment if available)
+    score_data = reasonableness_score(facts, valuation, enrichment=enrichment_dict)
 
     # Strategy
     strategy = offer_strategy(facts, valuation, score_data["score"])
 
     # Markdown report
-    md = build_md_report(facts, comps, valuation, score_data, strategy)
+    md = build_md_report(facts, comps, valuation, score_data, strategy, ai_narrative=ai_narrative)
 
     # Serialise comps
     comps_list = []
@@ -589,7 +908,7 @@ def run_propertyscorecard(
         "strategy": strategy,
     }
 
-    return {
+    result = {
         "ok": True,
         "created_at_utc": ts,
         "url": url,
@@ -598,3 +917,11 @@ def run_propertyscorecard(
         "valuation": valuation_dict,
         "md_report": md,
     }
+
+    if enrichment_dict:
+        result["enrichment"] = enrichment_dict
+
+    if ai_narrative:
+        result["ai_narrative"] = ai_narrative
+
+    return result
