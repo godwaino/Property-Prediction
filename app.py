@@ -2,9 +2,18 @@
 Predictelligence Property — Unified Flask Application
 Combines PropertyScorecard (Rightmove valuation) with the
 Predictelligence ML prediction engine in a single app.
+
+Enhanced with:
+  - In-memory analysis caching (1-hour TTL by URL hash)
+  - IP-based rate limiting (20 req/IP/min on /analyze)
+  - Admin stats endpoint (/api/admin/stats)
+  - Location enrichment (crime, flood, deprivation, EPC, planning)
+  - Claude AI narrative generation
 """
 from __future__ import annotations
 
+import collections
+import hashlib
 import logging
 import os
 import threading
@@ -12,6 +21,7 @@ import time
 import traceback
 from datetime import datetime, timezone
 from io import BytesIO
+from typing import Dict, Optional, Tuple
 
 from flask import Flask, abort, jsonify, render_template, request, send_file
 
@@ -39,6 +49,78 @@ app = Flask(__name__)
 app.config["DEBUG"] = os.environ.get("FLASK_ENV") == "development"
 
 init_db(DB_PATH)
+
+# ── In-memory analysis cache ───────────────────────────────────────────────────
+_analysis_cache: Dict[str, Tuple[float, dict]] = {}   # key → (expires_at, result)
+_cache_lock = threading.Lock()
+_CACHE_TTL = 3600  # 1 hour
+_cache_hits = 0
+_cache_misses = 0
+
+
+def _cache_key(url: str) -> str:
+    """SHA-256 of the URL (excluding asking price — URL is stable per listing)."""
+    return hashlib.sha256(url.encode()).hexdigest()[:20]
+
+
+def _cache_get(key: str) -> Optional[dict]:
+    global _cache_hits, _cache_misses
+    with _cache_lock:
+        entry = _analysis_cache.get(key)
+        if entry and time.time() < entry[0]:
+            _cache_hits += 1
+            return entry[1]
+        if entry:
+            del _analysis_cache[key]
+        _cache_misses += 1
+        return None
+
+
+def _cache_set(key: str, value: dict) -> None:
+    with _cache_lock:
+        _analysis_cache[key] = (time.time() + _CACHE_TTL, value)
+
+
+def _cache_stats() -> dict:
+    with _cache_lock:
+        total = len(_analysis_cache)
+        now = time.time()
+        active = sum(1 for exp, _ in _analysis_cache.values() if now < exp)
+    total_req = _cache_hits + _cache_misses
+    return {
+        "total_entries": total,
+        "active_entries": active,
+        "hits": _cache_hits,
+        "misses": _cache_misses,
+        "hit_rate_pct": round(_cache_hits / total_req * 100, 1) if total_req else 0.0,
+    }
+
+
+# ── Rate limiter ───────────────────────────────────────────────────────────────
+_rate_store: Dict[str, collections.deque] = collections.defaultdict(collections.deque)
+_rate_lock = threading.Lock()
+_RATE_WINDOW = 60   # seconds
+_RATE_MAX = 20      # requests per window
+
+
+def _check_rate_limit(ip: str) -> bool:
+    """Returns True if request is allowed, False if over limit."""
+    now = time.time()
+    with _rate_lock:
+        dq = _rate_store[ip]
+        while dq and dq[0] < now - _RATE_WINDOW:
+            dq.popleft()
+        if len(dq) >= _RATE_MAX:
+            return False
+        dq.append(now)
+        return True
+
+
+def _get_client_ip() -> str:
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.remote_addr or "unknown"
 
 # ── Predictelligence Engine (lazy init in background) ─────────────────────────
 _engine = None
@@ -142,6 +224,36 @@ def home():
     return render_template("dashboard.html", analyses=rows)
 
 
+def _run_predictelligence(result: dict, user_type: str) -> dict:
+    """Run the ML prediction engine on an already-analysed property result."""
+    eng = _get_engine()
+    if not eng:
+        return {"model_ready": False, "warming_up": True}
+    try:
+        facts = result.get("facts") or {}
+        valuation = result.get("valuation") or {}
+        postcode = facts.get("postcode") or "SW1A1AA"
+        current_val = float(facts.get("price") or 285_000)
+        comp_avg = float(valuation.get("fair_value_mid") or current_val)
+
+        prediction = eng.analyse(
+            postcode=postcode,
+            current_valuation=current_val,
+            comparable_average=comp_avg,
+            user_type=user_type,
+        )
+        logger.info(
+            "Predictelligence: %s direction=%s signal=%s",
+            postcode,
+            prediction.get("direction"),
+            prediction.get("investment_signal"),
+        )
+        return prediction
+    except Exception as exc:
+        logger.warning("Predictelligence analysis failed: %s", exc)
+        return {"error": str(exc), "model_ready": False}
+
+
 @app.post("/analyze")
 def analyze():
     payload = request.get_json(silent=True) or {}
@@ -154,7 +266,25 @@ def analyze():
     if "rightmove.co.uk" not in url.lower():
         return jsonify({"ok": False, "error": "Please provide a valid Rightmove URL."}), 400
 
-    # ── Run PropertyScorecard ─────────────────────────────────────────────────
+    # ── Rate limit check ──────────────────────────────────────────────────────
+    client_ip = _get_client_ip()
+    if not _check_rate_limit(client_ip):
+        return jsonify({
+            "ok": False,
+            "error": "Rate limit exceeded. Maximum 20 requests per minute.",
+        }), 429
+
+    # ── Cache check ───────────────────────────────────────────────────────────
+    cache_key = _cache_key(url)
+    cached = _cache_get(cache_key)
+    if cached:
+        logger.info("Cache hit for %s", url)
+        cached_copy = dict(cached)
+        cached_copy["prediction"] = _run_predictelligence(cached_copy, user_type)
+        cached_copy["cache_hit"] = True
+        return jsonify({"ok": True, "result": cached_copy})
+
+    # ── Run PropertyScorecard (with enrichment + Claude) ──────────────────────
     try:
         logger.info("Starting PropertyScorecard analysis: %s", url)
         result = run_propertyscorecard(
@@ -169,35 +299,11 @@ def analyze():
         return jsonify({"ok": False, "error": f"Analysis failed: {e}", "trace": error_trace}), 500
 
     # ── Run Predictelligence ──────────────────────────────────────────────────
-    prediction_result = None
-    eng = _get_engine()
-    if eng:
-        try:
-            facts = result.get("facts") or {}
-            valuation = result.get("valuation") or {}
-            postcode = facts.get("postcode") or "SW1A1AA"
-            current_val = float(facts.get("price") or 285_000)
-            comp_avg = float(valuation.get("fair_value_mid") or current_val)
+    result["prediction"] = _run_predictelligence(result, user_type)
+    result["cache_hit"] = False
 
-            prediction_result = eng.analyse(
-                postcode=postcode,
-                current_valuation=current_val,
-                comparable_average=comp_avg,
-                user_type=user_type,
-            )
-            logger.info(
-                "Predictelligence: %s direction=%s signal=%s",
-                postcode,
-                prediction_result.get("direction"),
-                prediction_result.get("investment_signal"),
-            )
-        except Exception as exc:
-            logger.warning("Predictelligence analysis failed: %s", exc)
-            prediction_result = {"error": str(exc), "model_ready": False}
-    else:
-        prediction_result = {"model_ready": False, "warming_up": True}
-
-    result["prediction"] = prediction_result
+    # ── Cache before persisting (without analysis_id) ─────────────────────────
+    _cache_set(cache_key, result)
 
     # ── Persist to database ───────────────────────────────────────────────────
     try:
@@ -309,6 +415,39 @@ def api_prediction_health():
             "uptime": f"00:00:{int(uptime_s):02d}",
         })
     return jsonify({"ok": True, **eng.health()})
+
+
+@app.get("/api/admin/stats")
+def api_admin_stats():
+    """
+    GET /api/admin/stats
+    Protected by X-Admin-Key header (matches ADMIN_KEY env var).
+    Returns cache stats, model health, and uptime.
+    """
+    admin_key = os.environ.get("ADMIN_KEY", "")
+    if admin_key:
+        provided = request.headers.get("X-Admin-Key", "")
+        if provided != admin_key:
+            abort(403)
+
+    eng = _get_engine()
+    uptime_s = (datetime.now(timezone.utc) - _startup_time).total_seconds()
+    h, remainder = divmod(int(uptime_s), 3600)
+    m, s = divmod(remainder, 60)
+
+    model_health = eng.health() if eng else {"status": "starting", "model_ready": False}
+
+    return jsonify({
+        "ok": True,
+        "uptime": f"{h:02d}:{m:02d}:{s:02d}",
+        "cache": _cache_stats(),
+        "model": model_health,
+        "rate_limiter": {
+            "window_seconds": _RATE_WINDOW,
+            "max_requests": _RATE_MAX,
+            "tracked_ips": len(_rate_store),
+        },
+    })
 
 
 # ─────────────────────────────────────────────────────────────────────────────
