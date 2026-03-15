@@ -5,8 +5,9 @@ Falls back to sensible defaults on any failure so the pipeline never crashes.
 from __future__ import annotations
 
 import datetime as _dt
+import math
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import requests
 
@@ -26,19 +27,29 @@ DEFAULTS: Dict[str, Any] = {
 }
 
 _TIMEOUT = 8  # seconds per request
+# HPI data has a ~2-month publication lag; fetch 3 months back to be safe
+_HPI_LAG_MONTHS = 3
 
 
-def _current_season() -> tuple:
-    """Return (season_name, season_factor) based on the current month."""
-    month = _dt.datetime.utcnow().month
+def _season_from_month(month: int) -> Tuple[str, float]:
+    """Map a calendar month (1–12) to (season_name, season_factor)."""
     if month in (3, 4, 5):
         return "Spring", 1.0
-    elif month in (6, 7, 8):
+    if month in (6, 7, 8):
         return "Summer", 1.0
-    elif month in (9, 10, 11):
+    if month in (9, 10, 11):
         return "Autumn", 0.8
-    else:
-        return "Winter", 0.6
+    return "Winter", 0.6
+
+
+def _offset_ym(now: _dt.datetime, months_back: int) -> str:
+    """Return 'YYYY-MM' for *months_back* months before *now*, handling year wrap."""
+    month = now.month - months_back
+    year = now.year
+    if month <= 0:
+        month += 12
+        year -= 1
+    return f"{year}-{month:02d}"
 
 
 class DataAgent(BaseAgent):
@@ -48,7 +59,9 @@ class DataAgent(BaseAgent):
         self._prev_inflation: Optional[float] = None
 
     def run(self, state: PipelineState) -> PipelineState:
-        season_name, season_factor = _current_season()
+        # Capture a single timestamp for all time-dependent operations this cycle.
+        now = _dt.datetime.utcnow()
+        season_name, season_factor = _season_from_month(now.month)
         data: Dict[str, Any] = {
             **DEFAULTS,
             "season": season_name,
@@ -57,7 +70,7 @@ class DataAgent(BaseAgent):
 
         # ── 1. Bank of England base rate ──────────────────────────────────────
         try:
-            boe_rate = self._fetch_boe_rate()
+            boe_rate = self._fetch_boe_rate(now)
             if boe_rate is not None:
                 data["boe_rate"] = boe_rate
                 data["boe_direction"] = self._rate_direction(boe_rate, self._prev_boe_rate)
@@ -77,7 +90,7 @@ class DataAgent(BaseAgent):
 
         # ── 3. Weather / seasonal factor ─────────────────────────────────────
         try:
-            temp, season, season_factor = self._fetch_weather()
+            temp, season, season_factor = self._fetch_weather(now)
             data["avg_temp"] = temp
             data["season"] = season
             data["season_factor"] = season_factor
@@ -94,7 +107,7 @@ class DataAgent(BaseAgent):
 
         # ── 5. Land Registry UK HPI ───────────────────────────────────────────
         try:
-            uk_avg = self._fetch_uk_hpi()
+            uk_avg = self._fetch_uk_hpi(now)
             if uk_avg:
                 data["uk_avg_price"] = uk_avg
         except Exception as exc:
@@ -103,7 +116,7 @@ class DataAgent(BaseAgent):
         # ── Add time-based drift when APIs are unavailable ────────────────────
         # This ensures the StandardScaler sees feature variance even in
         # fallback mode, preventing zero-variance collapse in the model.
-        self._add_temporal_drift(data)
+        self._add_temporal_drift(data, now)
 
         state.raw_data = data
         self.logger.debug(
@@ -115,18 +128,16 @@ class DataAgent(BaseAgent):
         return state
 
     @staticmethod
-    def _add_temporal_drift(data: Dict[str, Any]) -> None:
+    def _add_temporal_drift(data: Dict[str, Any], now: _dt.datetime) -> None:
         """
-        When live APIs are unavailable, inject time-based variation into defaults
-        so the StandardScaler sees feature variance and the model can learn.
-        Uses deterministic offsets from the current time — not random noise.
+        Inject time-based variation into defaults so the StandardScaler sees
+        feature variance and the model can learn. Uses deterministic offsets
+        from the provided timestamp — not random noise.
         """
-        now = _dt.datetime.utcnow()
-        # Cyclic daily drift (±0.25% over 24h)
         hour_phase = (now.hour + now.minute / 60.0) / 24.0
         day_phase  = (now.timetuple().tm_yday % 30) / 30.0
+        week_phase = (now.timetuple().tm_yday % 7) / 7.0
 
-        import math
         # BoE rate: ±0.3 over a 30-day cycle
         data["boe_rate"] = round(data["boe_rate"] + 0.3 * math.sin(day_phase * 2 * math.pi), 4)
         # Inflation: ±0.25 intraday
@@ -134,24 +145,20 @@ class DataAgent(BaseAgent):
         # Temperature: ±5° over day cycle
         data["avg_temp"] = round(data["avg_temp"] + 5.0 * math.sin(hour_phase * 2 * math.pi), 2)
         # UK avg price: ±2000 over weekly cycle
-        week_phase = (now.timetuple().tm_yday % 7) / 7.0
         data["uk_avg_price"] = round(data["uk_avg_price"] + 2000 * math.sin(week_phase * 2 * math.pi))
 
     # ── fetchers ──────────────────────────────────────────────────────────────
 
-    def _fetch_boe_rate(self) -> Optional[float]:
-        current_year = _dt.datetime.utcnow().year
+    def _fetch_boe_rate(self, now: _dt.datetime) -> Optional[float]:
         url = (
             "https://www.bankofengland.co.uk/boeapps/database/fromshowcolumns.asp"
             "?Travel=NIxAIxSUx&FromSeries=1&ToSeries=50&DAT=RNG"
-            f"&FD=1&FM=Jan&FY=2024&TD=31&TM=Dec&TY={current_year}"
+            f"&FD=1&FM=Jan&FY=2024&TD=31&TM=Dec&TY={now.year}"
             "&VFD=Y&html.x=66&html.y=26&C=BYD&Filter=N"
         )
         resp = requests.get(url, timeout=_TIMEOUT, headers={"Accept": "text/html"})
         resp.raise_for_status()
-        # Extract last numeric rate from the HTML
         matches = re.findall(r"(\d+\.\d+)", resp.text)
-        # Filter to realistic BoE rate range (0.1 – 20.0)
         candidates = [float(m) for m in matches if 0.1 <= float(m) <= 20.0]
         return candidates[-1] if candidates else None
 
@@ -159,15 +166,12 @@ class DataAgent(BaseAgent):
         url = "https://api.ons.gov.uk/v1/datasets/cpih01/timeseries/l55o/data"
         resp = requests.get(url, timeout=_TIMEOUT)
         resp.raise_for_status()
-        data = resp.json()
-        # ONS returns months list — grab the most recent value
-        months = data.get("months") or []
+        months = resp.json().get("months") or []
         if months:
-            latest = months[-1]
-            return float(latest.get("value", DEFAULTS["inflation_rate"]))
+            return float(months[-1].get("value", DEFAULTS["inflation_rate"]))
         return None
 
-    def _fetch_weather(self):
+    def _fetch_weather(self, now: _dt.datetime) -> Tuple[float, str, float]:
         url = (
             "https://api.open-meteo.com/v1/forecast"
             "?latitude=51.5&longitude=-0.1&current_weather=true"
@@ -176,18 +180,7 @@ class DataAgent(BaseAgent):
         resp.raise_for_status()
         cw = resp.json().get("current_weather", {})
         temp = float(cw.get("temperature", DEFAULTS["avg_temp"]))
-
-        import datetime
-        month = datetime.datetime.utcnow().month
-        if month in (3, 4, 5):
-            season, factor = "Spring", 1.0
-        elif month in (6, 7, 8):
-            season, factor = "Summer", 1.0
-        elif month in (9, 10, 11):
-            season, factor = "Autumn", 0.8
-        else:
-            season, factor = "Winter", 0.6
-
+        season, factor = _season_from_month(now.month)
         return temp, season, factor
 
     def _fetch_postcode(self, postcode: str) -> Optional[Dict[str, Any]]:
@@ -205,31 +198,22 @@ class DataAgent(BaseAgent):
             "admin_district": result.get("admin_district"),
         }
 
-    def _fetch_uk_hpi(self) -> Optional[float]:
-        # Use 3 months ago to ensure data is published (HPI has a ~2-month lag)
-        now = _dt.datetime.utcnow()
-        month_offset = now.month - 3
-        year = now.year
-        if month_offset <= 0:
-            month_offset += 12
-            year -= 1
-        hpi_month = f"{year}-{month_offset:02d}"
+    def _fetch_uk_hpi(self, now: _dt.datetime) -> Optional[float]:
+        hpi_month = _offset_ym(now, _HPI_LAG_MONTHS)
         url = (
             "https://landregistry.data.gov.uk/data/ukhpi/region/"
             f"united-kingdom/month/{hpi_month}.json"
         )
         resp = requests.get(url, timeout=_TIMEOUT)
         resp.raise_for_status()
-        data = resp.json()
-        # Try to extract average price from the result
-        result = data.get("result") or {}
+        result = resp.json().get("result") or {}
         primary = result.get("primaryTopic") or {}
         avg = primary.get("averagePrice") or primary.get("housePriceIndex")
         if avg:
             val = float(avg)
             # If it's an index (around 100-200), convert roughly to price
             if val < 1000:
-                val = val * 1_500  # rough index-to-price conversion
+                val = val * 1_500
             return val
         return None
 
