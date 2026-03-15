@@ -91,30 +91,30 @@ class ModelAgent(BaseAgent):
 
         raw_prediction = float(self._model.predict(X)[0])
 
-        # Guard against wild extrapolation — anchor within ±40% of target
-        target_anchor = state.target if state.target > 0 else 285_000
-        prediction = max(raw_prediction, target_anchor * 0.60)
-        prediction = min(prediction, target_anchor * 1.40)
-        prediction = max(prediction, 50_000)
+        # The model predicts UK average price (state.target).
+        # Clamp within ±40% of the UK average anchor to prevent wild extrapolation.
+        uk_avg_anchor = state.target if state.target > 0 else 285_000
+        uk_prediction = max(raw_prediction, uk_avg_anchor * 0.60)
+        uk_prediction = min(uk_prediction, uk_avg_anchor * 1.40)
+
+        # Derive the % change in the UK market from this prediction,
+        # then apply that same % change to the subject property's valuation.
+        ratio = uk_prediction / uk_avg_anchor
+        subject_price = state.current_valuation if state.current_valuation > 0 else uk_avg_anchor
+        prediction = max(subject_price * ratio, 50_000)
         prediction = min(prediction, 5_000_000)
 
         state.model_ready = True
         state.prediction = prediction
 
-        # Direction
-        current = state.current_valuation or state.target
-        if current > 0:
-            ratio = prediction / current
-            if ratio > UP_THRESHOLD:
-                state.direction = "UP"
-            elif ratio < DOWN_THRESHOLD:
-                state.direction = "DOWN"
-            else:
-                state.direction = "SIDEWAYS"
-            state.predicted_change_pct = round((ratio - 1.0) * 100, 2)
+        # Direction and change % are based on the UK market trend (ratio vs UK avg)
+        state.predicted_change_pct = round((ratio - 1.0) * 100, 2)
+        if ratio > UP_THRESHOLD:
+            state.direction = "UP"
+        elif ratio < DOWN_THRESHOLD:
+            state.direction = "DOWN"
         else:
             state.direction = "SIDEWAYS"
-            state.predicted_change_pct = 0.0
 
         # Confidence grows with training data
         state.confidence = min(70.0 + self._n_trained * 2.0, 95.0)
