@@ -28,6 +28,19 @@ DEFAULTS: Dict[str, Any] = {
 _TIMEOUT = 8  # seconds per request
 
 
+def _current_season() -> tuple:
+    """Return (season_name, season_factor) based on the current month."""
+    month = _dt.datetime.utcnow().month
+    if month in (3, 4, 5):
+        return "Spring", 1.0
+    elif month in (6, 7, 8):
+        return "Summer", 1.0
+    elif month in (9, 10, 11):
+        return "Autumn", 0.8
+    else:
+        return "Winter", 0.6
+
+
 class DataAgent(BaseAgent):
     def __init__(self) -> None:
         super().__init__("DataAgent")
@@ -35,7 +48,12 @@ class DataAgent(BaseAgent):
         self._prev_inflation: Optional[float] = None
 
     def run(self, state: PipelineState) -> PipelineState:
-        data: Dict[str, Any] = dict(DEFAULTS)
+        season_name, season_factor = _current_season()
+        data: Dict[str, Any] = {
+            **DEFAULTS,
+            "season": season_name,
+            "season_factor": season_factor,
+        }
 
         # ── 1. Bank of England base rate ──────────────────────────────────────
         try:
@@ -122,10 +140,11 @@ class DataAgent(BaseAgent):
     # ── fetchers ──────────────────────────────────────────────────────────────
 
     def _fetch_boe_rate(self) -> Optional[float]:
+        current_year = _dt.datetime.utcnow().year
         url = (
             "https://www.bankofengland.co.uk/boeapps/database/fromshowcolumns.asp"
             "?Travel=NIxAIxSUx&FromSeries=1&ToSeries=50&DAT=RNG"
-            "&FD=1&FM=Jan&FY=2024&TD=31&TM=Dec&TY=2025"
+            f"&FD=1&FM=Jan&FY=2024&TD=31&TM=Dec&TY={current_year}"
             "&VFD=Y&html.x=66&html.y=26&C=BYD&Filter=N"
         )
         resp = requests.get(url, timeout=_TIMEOUT, headers={"Accept": "text/html"})
@@ -187,9 +206,17 @@ class DataAgent(BaseAgent):
         }
 
     def _fetch_uk_hpi(self) -> Optional[float]:
+        # Use 3 months ago to ensure data is published (HPI has a ~2-month lag)
+        now = _dt.datetime.utcnow()
+        month_offset = now.month - 3
+        year = now.year
+        if month_offset <= 0:
+            month_offset += 12
+            year -= 1
+        hpi_month = f"{year}-{month_offset:02d}"
         url = (
             "https://landregistry.data.gov.uk/data/ukhpi/region/"
-            "united-kingdom/month/2024-01.json"
+            f"united-kingdom/month/{hpi_month}.json"
         )
         resp = requests.get(url, timeout=_TIMEOUT)
         resp.raise_for_status()
