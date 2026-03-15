@@ -17,10 +17,17 @@ from predictelligence.pipeline_state import PipelineState
 logger = logging.getLogger("predictelligence.ModelAgent")
 
 # Direction thresholds
-UP_THRESHOLD = 1.005    # predicted > current * 1.005 → UP
-DOWN_THRESHOLD = 0.995  # predicted < current * 0.995 → DOWN
+UP_THRESHOLD = 1.005    # predicted > uk_avg * 1.005 → UP
+DOWN_THRESHOLD = 0.995  # predicted < uk_avg * 0.995 → DOWN
 
 MIN_CYCLES_TO_PREDICT = 3
+
+# UK average price fallback and extrapolation guards
+_DEFAULT_UK_AVG = 285_000
+_CLAMP_LOWER_RATIO = 0.60   # model cannot predict below 60% of UK avg anchor
+_CLAMP_UPPER_RATIO = 1.40   # model cannot predict above 140% of UK avg anchor
+_MIN_PROPERTY_PRICE = 50_000
+_MAX_PROPERTY_PRICE = 5_000_000
 
 
 class ModelAgent(BaseAgent):
@@ -93,16 +100,15 @@ class ModelAgent(BaseAgent):
 
         # The model predicts UK average price (state.target).
         # Clamp within ±40% of the UK average anchor to prevent wild extrapolation.
-        uk_avg_anchor = state.target if state.target > 0 else 285_000
-        uk_prediction = max(raw_prediction, uk_avg_anchor * 0.60)
-        uk_prediction = min(uk_prediction, uk_avg_anchor * 1.40)
+        uk_avg_anchor = state.target if state.target > 0 else _DEFAULT_UK_AVG
+        uk_prediction = max(raw_prediction, uk_avg_anchor * _CLAMP_LOWER_RATIO)
+        uk_prediction = min(uk_prediction, uk_avg_anchor * _CLAMP_UPPER_RATIO)
 
         # Derive the % change in the UK market from this prediction,
         # then apply that same % change to the subject property's valuation.
         ratio = uk_prediction / uk_avg_anchor
         subject_price = state.current_valuation if state.current_valuation > 0 else uk_avg_anchor
-        prediction = max(subject_price * ratio, 50_000)
-        prediction = min(prediction, 5_000_000)
+        prediction = min(max(subject_price * ratio, _MIN_PROPERTY_PRICE), _MAX_PROPERTY_PRICE)
 
         state.model_ready = True
         state.prediction = prediction
