@@ -1,72 +1,206 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Predictelligence Admin</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin — Predictelligence Property</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%2300e5a0'/><text y='24' x='5' font-size='22' font-weight='900' fill='%2307090f'>P</text></svg>" />
 </head>
 <body>
-  <main class="container">
-    <h1>Predictelligence Admin Dashboard</h1>
-    <p class="muted">Operational controls for running live prediction, model health checks and history queries.</p>
-    <p class="muted"><a href="/">← Back to public dashboard</a></p>
 
-    <section class="card">
-      <h2>Rightmove Workaround: CSV Comparable Import</h2>
-      <p class="muted">If portal access is restricted, export comparable rows to CSV and upload here to keep valuation + model learning moving.</p>
-      <p class="muted small">Expected headers: <code>postcode,property_type,bedrooms,price,date_sold,floor_area_sqft,tenure,new_build</code></p>
-      {% if uploaded or failed %}
-      <p><strong>Upload result:</strong> {{ uploaded }} inserted, {{ failed }} skipped.</p>
-      {% endif %}
+  <div class="bg-canvas" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <div class="container">
+
+    <!-- ── Nav ── -->
+    <nav>
+      <div class="nav-brand">
+        <div class="nav-logo">P</div>
+        <div class="nav-title">Predictelligence <span>Property</span></div>
+      </div>
+      <div class="nav-links">
+        <span class="nav-pill">Admin</span>
+        <a class="btn-ghost" href="/">← Dashboard</a>
+        <a class="btn-ghost" href="/api/prediction/health">Engine Status</a>
+      </div>
+    </nav>
+
+    <!-- ── Header ── -->
+    <div class="admin-banner card-animate">
+      <div>
+        <h3>⚙️ Admin Dashboard</h3>
+        <p>Operational controls — model diagnostics, prediction runs, and comparable data import.</p>
+      </div>
+      <a class="btn-ghost" href="/">← Public App</a>
+    </div>
+
+    <!-- ── Upload comparables ── -->
+    <div class="card card-animate">
+      <div class="card-header">
+        <span class="card-title">CSV Comparable Import</span>
+        {% if uploaded or failed %}
+        <span class="badge {% if uploaded %}badge-green{% else %}badge-red{% endif %}">
+          {{ uploaded }} inserted{% if failed %}, {{ failed }} skipped{% endif %}
+        </span>
+        {% else %}
+        <span class="badge badge-ghost">CSV Upload</span>
+        {% endif %}
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:6px;">
+        Upload comparable sales data as CSV to feed the valuation engine and model learning.
+      </p>
+      <p style="font-size:11px;color:var(--subtle);margin-bottom:16px;">
+        Expected headers: <code>postcode, property_type, bedrooms, price, date_sold, floor_area_sqft, tenure, new_build</code>
+      </p>
       <form action="/admin/upload-comparables" method="post" enctype="multipart/form-data" class="upload-form">
-        <input type="file" name="comparables_csv" accept=".csv" required />
-        <button type="submit">Upload CSV</button>
+        <input type="file" name="comparables_csv" accept=".csv" required style="flex:1;min-width:0;" />
+        <button type="submit" class="btn-primary" style="padding:12px 28px;font-size:13px;">Upload CSV</button>
       </form>
-    </section>
+    </div>
 
-    <form id="analysisForm" class="card" onsubmit="return false;">
-      <label>Postcode <input name="postcode" value="SW1A 1AA" required /></label>
-      <label>Property type
-        <select name="property_type">
-          <option>Semi-detached</option><option>Detached</option><option>Terraced</option><option>Flat</option>
-        </select>
-      </label>
-      <label>Bedrooms <input type="number" name="bedrooms" min="1" value="3" /></label>
-      <label>Current valuation <input type="number" name="asking_price" min="50000" step="1000" value="450000" /></label>
-      <label>User type
-        <select name="user_type">
-          <option value="investor">Property Investor</option>
-          <option value="first_time_buyer">First Time Buyer</option>
-          <option value="home_mover">Home Mover</option>
-        </select>
-      </label>
-
+    <!-- ── Live controls ── -->
+    <div class="card card-animate">
+      <div class="card-header">
+        <span class="card-title">Live Engine Controls</span>
+        <span class="badge badge-blue">API</span>
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label for="adm-postcode">Postcode</label>
+          <input id="adm-postcode" type="text" value="SW1A 1AA" />
+        </div>
+        <div class="field">
+          <label for="adm-type">Property Type</label>
+          <select id="adm-type">
+            <option value="semi-detached">Semi-Detached</option>
+            <option value="detached">Detached</option>
+            <option value="terraced">Terraced</option>
+            <option value="flat">Flat</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="adm-beds">Bedrooms</label>
+          <input id="adm-beds" type="number" min="1" value="3" />
+        </div>
+        <div class="field">
+          <label for="adm-val">Valuation (£)</label>
+          <input id="adm-val" type="number" min="50000" step="1000" value="450000" />
+        </div>
+        <div class="field">
+          <label for="adm-user">User Type</label>
+          <select id="adm-user">
+            <option value="investor">Property Investor</option>
+            <option value="first_time_buyer">First-Time Buyer</option>
+            <option value="home_mover">Home Mover</option>
+          </select>
+        </div>
+      </div>
       <div class="dashboard-actions">
-        <button type="button" id="runPredictionBtn">Run Live Prediction</button>
-        <button type="button" id="checkHealthBtn">Check Model Health</button>
-        <button type="button" id="loadHistoryBtn">Load Prediction History</button>
+        <button class="btn-primary" type="button" id="runPredictionBtn" style="font-size:13px;padding:11px 22px;">▶ Run Prediction</button>
+        <button class="btn-ghost" type="button" id="checkHealthBtn">Engine Health</button>
+        <button class="btn-ghost" type="button" id="loadHistoryBtn">Load History</button>
       </div>
-    </form>
+      <div id="dashboardStatus" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
+    </div>
 
-    <section class="card">
-      <div id="dashboardStatus" class="muted">Ready.</div>
-      <div class="dashboard-grid">
-        <article>
-          <h3>Prediction API Output</h3>
-          <pre id="predictionOutput">{}</pre>
-        </article>
-        <article>
-          <h3>Model Health Output</h3>
-          <pre id="healthOutput">{}</pre>
-        </article>
-        <article>
-          <h3>History Output</h3>
-          <pre id="historyOutput">[]</pre>
-        </article>
+    <!-- ── Output panels ── -->
+    <div class="dashboard-grid">
+      <div class="card card-animate">
+        <div class="card-header">
+          <span class="card-title">Prediction Output</span>
+          <span class="badge badge-ghost">JSON</span>
+        </div>
+        <pre id="predictionOutput">{}</pre>
       </div>
-    </section>
-  </main>
+      <div class="card card-animate">
+        <div class="card-header">
+          <span class="card-title">Engine Health</span>
+          <span class="badge badge-ghost">JSON</span>
+        </div>
+        <pre id="healthOutput">{}</pre>
+      </div>
+      <div class="card card-animate">
+        <div class="card-header">
+          <span class="card-title">Prediction History</span>
+          <span class="badge badge-ghost">JSON</span>
+        </div>
+        <pre id="historyOutput">[]</pre>
+      </div>
+    </div>
+
+    <p class="footer-text">
+      Predictelligence Property — Admin access. Handle with care.
+    </p>
+
+  </div><!-- .container -->
+
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  <script>
+    function getParams() {
+      return {
+        postcode: document.getElementById('adm-postcode').value.trim(),
+        property_type: document.getElementById('adm-type').value,
+        bedrooms: document.getElementById('adm-beds').value,
+        asking_price: document.getElementById('adm-val').value,
+        user_type: document.getElementById('adm-user').value,
+      };
+    }
+
+    function setStatus(msg) {
+      document.getElementById('dashboardStatus').textContent = msg;
+    }
+
+    document.getElementById('runPredictionBtn').addEventListener('click', async () => {
+      const p = getParams();
+      setStatus('Running prediction…');
+      try {
+        const qs = new URLSearchParams({
+          postcode: p.postcode,
+          current_valuation: p.asking_price,
+          comparable_average: p.asking_price,
+          user_type: p.user_type,
+          property_type: p.property_type,
+          bedrooms: p.bedrooms,
+        });
+        const res = await fetch('/api/prediction/predict?' + qs);
+        const data = await res.json();
+        document.getElementById('predictionOutput').textContent = JSON.stringify(data, null, 2);
+        setStatus('Prediction complete.');
+      } catch (e) {
+        setStatus('Error: ' + e.message);
+      }
+    });
+
+    document.getElementById('checkHealthBtn').addEventListener('click', async () => {
+      setStatus('Checking engine health…');
+      try {
+        const res = await fetch('/api/prediction/health');
+        const data = await res.json();
+        document.getElementById('healthOutput').textContent = JSON.stringify(data, null, 2);
+        setStatus('Health check complete.');
+      } catch (e) {
+        setStatus('Error: ' + e.message);
+      }
+    });
+
+    document.getElementById('loadHistoryBtn').addEventListener('click', async () => {
+      const p = getParams();
+      setStatus('Loading history…');
+      try {
+        const res = await fetch('/api/prediction/history?postcode=' + encodeURIComponent(p.postcode));
+        const data = await res.json();
+        document.getElementById('historyOutput').textContent = JSON.stringify(data, null, 2);
+        setStatus('History loaded.');
+      } catch (e) {
+        setStatus('Error: ' + e.message);
+      }
+    });
+  </script>
+
 </body>
 </html>

@@ -1,94 +1,394 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Predictelligence Property</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Predictelligence Property | UK Property Intelligence</title>
+  <meta name="description" content="Instant AI property valuation, comparable analysis, and ML price forecasting for UK property buyers and investors." />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%2300e5a0'/><text y='24' x='5' font-size='22' font-weight='900' fill='%2307090f'>P</text></svg>" />
 </head>
 <body>
-  <main class="container">
-    <h1>Predictelligence Property</h1>
 
-    <section class="card admin-entry">
-      <h2>Admin Access</h2>
-      <p class="muted">Need operational controls for live prediction runs and model diagnostics?</p>
-      <a class="admin-link-btn" href="/admin">Open Admin Dashboard</a>
-      <p class="muted small">If this link does not open in your environment, try <a href="/admin-dashboard">/admin-dashboard</a> or <a href="/dashboard/admin">/dashboard/admin</a>.</p>
+  <div class="bg-canvas" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <div class="container">
+
+    <!-- ── Nav ── -->
+    <nav>
+      <div class="nav-brand">
+        <div class="nav-logo">P</div>
+        <div class="nav-title">Predictelligence <span>Property</span></div>
+      </div>
+      <div class="nav-links">
+        <span class="nav-pill">🇬🇧 UK Market</span>
+        <span class="nav-pill">Live ML</span>
+        <a class="btn-ghost" href="/api/prediction/health">Engine Status</a>
+        <a class="btn-ghost" href="/admin">Admin</a>
+      </div>
+    </nav>
+
+    {% if not result %}
+    <!-- ── Hero ── -->
+    <section class="hero">
+      <div class="hero-eyebrow">
+        <span class="live-dot"></span>
+        Live ML Forecasting · Comparable Analysis · UK Data
+      </div>
+      <h1 class="hero-title">
+        The Smarter Way<br />to <span class="grad-text">Buy Property</span> in the UK
+      </h1>
+      <p class="hero-sub">
+        Enter any UK property details for instant valuation, comparable sales analysis,
+        and a live machine-learning price forecast — all in seconds.
+      </p>
     </section>
 
-    <form action="/analyze" method="post" class="card">
-      <label>Postcode <input name="postcode" value="SW1A 1AA" required /></label>
-      <label>Property type
-        <select name="property_type">
-          <option>Semi-detached</option><option>Detached</option><option>Terraced</option><option>Flat</option>
-        </select>
-      </label>
-      <label>Bedrooms <input type="number" name="bedrooms" min="1" value="3" /></label>
-      <label>Asking price <input type="number" name="asking_price" min="50000" step="1000" value="450000" /></label>
-      <label>User type
-        <select name="user_type">
-          <option value="investor">Property Investor</option>
-          <option value="first_time_buyer">First Time Buyer</option>
-          <option value="home_mover">Home Mover</option>
-        </select>
-      </label>
-      <button type="submit">Analyse</button>
-    </form>
+    <!-- ── Feature highlights ── -->
+    <div class="feature-strip">
+      <div class="feature-tile"><span>🏠</span> Property Valuation</div>
+      <div class="feature-tile"><span>📊</span> Comparable Sales</div>
+      <div class="feature-tile"><span>🔮</span> ML Price Forecast</div>
+      <div class="feature-tile"><span>📈</span> Offer Strategy</div>
+      <div class="feature-tile"><span>⚠️</span> Risk Flags</div>
+      <div class="feature-tile"><span>⚡</span> Live Engine</div>
+      <div class="feature-tile"><span>🏦</span> Macro Signals</div>
+      <div class="feature-tile"><span>🎯</span> Deal Verdict</div>
+    </div>
+    {% endif %}
+
+    <!-- ── Analysis form ── -->
+    <div class="form-card card-animate" style="margin-bottom: 28px;">
+      <div class="card-header">
+        <span class="card-title">{% if result %}Analyse Another Property{% else %}Analyse a Property{% endif %}</span>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <span class="badge badge-green">Valuation</span>
+          <span class="badge badge-blue">Comparables</span>
+          <span class="badge badge-ghost">ML Forecast</span>
+        </div>
+      </div>
+
+      <form action="/analyze" method="post">
+        <div class="form-grid">
+          <div class="field">
+            <label for="postcode">Postcode</label>
+            <input id="postcode" name="postcode" type="text" placeholder="e.g. SW1A 1AA" value="{{ request.form.postcode or 'SW1A 1AA' }}" required />
+          </div>
+          <div class="field">
+            <label for="property_type">Property Type</label>
+            <select id="property_type" name="property_type">
+              <option value="semi-detached" {% if request.form.property_type == 'semi-detached' %}selected{% endif %}>Semi-Detached</option>
+              <option value="detached" {% if request.form.property_type == 'detached' %}selected{% endif %}>Detached</option>
+              <option value="terraced" {% if request.form.property_type == 'terraced' %}selected{% endif %}>Terraced</option>
+              <option value="flat" {% if request.form.property_type == 'flat' %}selected{% endif %}>Flat / Apartment</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="bedrooms">Bedrooms</label>
+            <input id="bedrooms" name="bedrooms" type="number" min="1" max="10" value="{{ request.form.bedrooms or '3' }}" />
+          </div>
+          <div class="field">
+            <label for="asking_price">Asking Price (£)</label>
+            <input id="asking_price" name="asking_price" type="number" min="50000" step="1000" placeholder="e.g. 450000" value="{{ request.form.asking_price or '450000' }}" />
+          </div>
+          <div class="field">
+            <label for="user_type">Buyer Profile</label>
+            <select id="user_type" name="user_type">
+              <option value="investor" {% if request.form.user_type == 'investor' %}selected{% endif %}>📈 Property Investor</option>
+              <option value="first_time_buyer" {% if request.form.user_type == 'first_time_buyer' %}selected{% endif %}>🏠 First-Time Buyer</option>
+              <option value="home_mover" {% if request.form.user_type == 'home_mover' %}selected{% endif %}>🔑 Home Mover</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit" class="btn-primary" style="width:100%;">Analyse Property →</button>
+      </form>
+    </div>
 
     {% if result %}
-    <section class="card">
-      <h2>Property Scorecard</h2>
-      <p><strong>Estimated Value:</strong> £{{ '{:,.0f}'.format(result.estimated_value) }}</p>
-      <p><strong>Comparables Avg:</strong> £{{ '{:,.0f}'.format(result.comparable_average) }}</p>
-      <p><strong>Confidence:</strong> {{ result.confidence }}%</p>
-      <p><strong>Deal Verdict:</strong> {{ result.deal_verdict }}</p>
-      <p><strong>Negotiation:</strong> {{ result.negotiation_strategy }}</p>
-      <ul>{% for flag in result.risk_flags %}<li>{{ flag }}</li>{% endfor %}</ul>
-    </section>
+    {# ─── Compute score ring values ─── #}
+    {% set conf = result.confidence | float %}
+    {% set r_val = 45 %}
+    {% set circ = 282.74 %}
+    {% set dash_offset = (circ * (1 - conf / 100)) | round(2) %}
+    {% if conf >= 75 %}{% set ring_color = '#00e5a0' %}{% elif conf >= 60 %}{% set ring_color = '#ffd166' %}{% else %}{% set ring_color = '#ff4d6d' %}{% endif %}
 
-    <section class="card forecast">
-      <h2>PREDICTELLIGENCE FORECAST</h2>
-      {% set p = result.prediction %}
-      {% if p.model_cycles < 3 %}
-      <div class="muted">Model is calibrating — predictions available shortly</div>
-      {% else %}
-      <div>
-        <h3>90-Day Price Forecast</h3>
-        <p class="big">£{{ '{:,.0f}'.format(p.predicted_value) }}</p>
-        <p>
-          {% if p.direction == 'UP' %}<span class="up">▲ UP</span>{% elif p.direction == 'DOWN' %}<span class="down">▼ DOWN</span>{% else %}<span class="side">→ SIDEWAYS</span>{% endif %}
-          ({{ '%.2f'|format(p.predicted_change_pct) }}%)
+    {# ─── Deal verdict badge class ─── #}
+    {% set verdict = result.deal_verdict | upper %}
+    {% if 'STRONG BUY' in verdict or verdict == 'BUY' %}{% set verdict_cls = 'badge-green' %}
+    {% elif verdict == 'NEGOTIATE' %}{% set verdict_cls = 'badge-amber' %}
+    {% else %}{% set verdict_cls = 'badge-red' %}{% endif %}
+
+    <!-- ── Result Hero ── -->
+    <div class="result-hero card-animate">
+      <div class="result-hero-info">
+        <p style="font-size:11px;color:var(--subtle);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">
+          Valuation Report
         </p>
-        <div class="bar"><span style="width: {{ p.confidence }}%"></span></div>
+        <div class="result-title">
+          £{{ '{:,.0f}'.format(result.estimated_value) }}
+          <span style="font-size:16px;font-weight:500;color:var(--muted);"> estimated value</span>
+        </div>
+        <div class="result-price" style="font-size:clamp(14px,2vw,18px);color:var(--muted);font-weight:500;margin-bottom:14px;">
+          Comps avg: £{{ '{:,.0f}'.format(result.comparable_average) }}
+        </div>
+        <div class="prop-pills">
+          <span class="badge {{ verdict_cls }}">{{ result.deal_verdict }}</span>
+          <span class="prop-pill">{{ '{:.0f}'.format(result.confidence) }}% confidence</span>
+        </div>
       </div>
 
-      {% if result.user_type == 'investor' %}
-      <div>
-        <h3>Investment Signal</h3>
-        <span class="badge {{ p.investment_signal|lower }}">{{ p.investment_signal }}</span>
-        <div class="bar"><span style="width: {{ p.composite_score * 100 }}%"></span></div>
-        <p>Estimated 12-month ROI: {{ p.user_insights.roi_estimate }}%</p>
-        <p>{{ p.user_insights.headline }}</p>
+      <!-- Score ring (SVG, server-rendered) -->
+      <div class="score-ring-wrap" id="score-ring-mount">
+        <svg class="score-ring-svg" width="110" height="110" viewBox="0 0 110 110">
+          <circle class="score-ring-bg" cx="55" cy="55" r="{{ r_val }}" stroke-width="7"/>
+          <circle class="score-ring-fill" cx="55" cy="55" r="{{ r_val }}" stroke-width="7"
+            stroke="{{ ring_color }}"
+            stroke-dasharray="{{ circ }}"
+            stroke-dashoffset="{{ dash_offset }}"
+          />
+          <text class="score-ring-num" x="55" y="51" fill="{{ ring_color }}">{{ '{:.0f}'.format(conf) }}</text>
+          <text class="score-ring-lbl" x="55" y="65">CONF%</text>
+        </svg>
+        <div class="score-verdict-text">{{ result.deal_verdict }}</div>
       </div>
-      {% else %}
-      <div>
-        <h3>Buyer/Mover Insight</h3>
-        <p>{{ p.user_insights.headline }}</p>
-        <p>{{ p.user_insights.affordability_outlook or p.user_insights.market_timing }}</p>
-      </div>
-      {% endif %}
+    </div>
 
-      <div>
-        <h3>Macro Signals</h3>
-        <p>BoE Rate {{ p.macro_signals.boe_rate }}% {{ p.macro_signals.boe_direction }}</p>
-        <p>Inflation {{ p.macro_signals.inflation_rate }}% {{ p.macro_signals.inflation_trend }}</p>
-        <p>Season {{ p.macro_signals.season }}</p>
-        <p>Affordability {{ p.macro_signals.affordability }}</p>
-      </div>
-      {% endif %}
-    </section>
+    <!-- ── Bento grid ── -->
+    <div class="bento-grid">
+
+      <!-- LEFT COLUMN -->
+      <div class="bento-left">
+
+        <!-- Valuation card -->
+        <div class="card card-animate">
+          <div class="card-header">
+            <span class="card-title">Valuation Breakdown</span>
+            <span class="badge {{ verdict_cls }}">{{ result.deal_verdict }}</span>
+          </div>
+          <div class="score-display">
+            <div class="score-big {% if conf >= 75 %}high{% elif conf >= 60 %}medium{% else %}low{% endif %}">
+              {{ '{:.0f}'.format(conf) }}
+            </div>
+            <div>
+              <div class="score-label">{{ result.deal_verdict }}</div>
+              <div class="score-comp">{{ '{:.0f}'.format(conf) }}% confidence in this estimate</div>
+            </div>
+          </div>
+          <div class="stat-grid">
+            <div class="stat-box">
+              <div class="stat-label">Estimated Value</div>
+              <div class="stat-value" style="color:var(--green);">£{{ '{:,.0f}'.format(result.estimated_value) }}</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-label">Comps Average</div>
+              <div class="stat-value">£{{ '{:,.0f}'.format(result.comparable_average) }}</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-label">Confidence</div>
+              <div class="stat-value">{{ '{:.0f}'.format(conf) }}%</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Offer strategy -->
+        <div class="card card-animate">
+          <div class="card-header">
+            <span class="card-title">Negotiation Strategy</span>
+            <span class="badge badge-amber">📈 Offer Guide</span>
+          </div>
+          <div style="font-size:14px;line-height:1.65;color:var(--muted);">
+            {{ result.negotiation_strategy }}
+          </div>
+        </div>
+
+        <!-- Risk flags -->
+        {% if result.risk_flags %}
+        <div class="card card-animate">
+          <div class="card-header">
+            <span class="card-title">Risk Flags</span>
+            <span class="badge badge-red">{{ result.risk_flags | length }}</span>
+          </div>
+          <div class="flag-list">
+            {% for flag in result.risk_flags %}
+            <div class="flag-item">
+              <span class="flag-dot {% if loop.first %}high{% elif loop.index <= 2 %}medium{% else %}low{% endif %}"></span>
+              <div>
+                <div class="flag-title">Risk Flag {{ loop.index }}</div>
+                <div class="flag-detail">{{ flag }}</div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+      </div><!-- .bento-left -->
+
+      <!-- RIGHT COLUMN: Predictelligence panel -->
+      <div class="bento-right">
+        {% set p = result.prediction %}
+        {% if p and p.model_cycles is defined and p.model_cycles >= 3 %}
+
+        <div class="pi-panel card-animate">
+          <div class="pi-inner">
+            <div class="pi-header">
+              <span class="pi-logo">⚡ Predictelligence Forecast</span>
+              <span class="badge badge-green">Live</span>
+            </div>
+            <div class="pi-body">
+
+              <!-- 90-day forecast -->
+              <div class="pi-section">
+                <div class="pi-section-label">90-Day Price Forecast</div>
+                <div class="pi-forecast-value">£{{ '{:,.0f}'.format(p.predicted_value) }}</div>
+                <div class="pi-dir-row">
+                  {% if p.direction == 'UP' %}
+                  <span class="pi-direction dir-up">▲ UP</span>
+                  <span class="pi-change pos">+{{ '%.2f'|format(p.predicted_change_pct) }}%</span>
+                  {% elif p.direction == 'DOWN' %}
+                  <span class="pi-direction dir-down">▼ DOWN</span>
+                  <span class="pi-change neg">{{ '%.2f'|format(p.predicted_change_pct) }}%</span>
+                  {% else %}
+                  <span class="pi-direction dir-side">→ SIDEWAYS</span>
+                  <span class="pi-change neu">{{ '%.2f'|format(p.predicted_change_pct) }}%</span>
+                  {% endif %}
+                </div>
+                <div class="progress-label">
+                  <span>Model Confidence</span>
+                  <span>{{ p.confidence | int }}%</span>
+                </div>
+                <div class="progress-track">
+                  <div class="progress-fill" style="width:{{ p.confidence | int }}%;"></div>
+                </div>
+              </div>
+
+              <hr class="pi-divider" />
+
+              <!-- Investment signal (investor only) -->
+              {% if result.user_type == 'investor' %}
+              <div class="pi-section">
+                <div class="pi-section-label">Investment Signal</div>
+                {% set sig = (p.investment_signal or 'HOLD') | upper %}
+                <div class="pi-signal {% if sig == 'BUY' %}sig-buy{% elif sig == 'SELL' %}sig-sell{% else %}sig-hold{% endif %}">
+                  {{ sig }}
+                </div>
+                {% if p.user_insights %}
+                <div class="pi-roi">
+                  <span class="pi-roi-key">Est. 12-month ROI</span>
+                  <span class="pi-roi-val">{{ p.user_insights.roi_estimate or '—' }}%</span>
+                </div>
+                {% endif %}
+                <div class="progress-label">
+                  <span>Composite Score</span>
+                  <span>{{ (p.composite_score * 100) | int }}%</span>
+                </div>
+                <div class="progress-track">
+                  <div class="progress-fill {% if (p.composite_score * 100) < 40 %}red{% elif (p.composite_score * 100) < 65 %}amber{% endif %}" style="width:{{ (p.composite_score * 100) | int }}%;"></div>
+                </div>
+              </div>
+              {% else %}
+              <div class="pi-section">
+                <div class="pi-section-label">Buyer Insight</div>
+                {% if p.user_insights %}
+                <div class="pi-insight">
+                  <div class="pi-insight-head">{{ p.user_insights.headline or '' }}</div>
+                  <div class="pi-insight-body">{{ p.user_insights.affordability_outlook or p.user_insights.market_timing or '' }}</div>
+                </div>
+                {% endif %}
+              </div>
+              {% endif %}
+
+              {% if p.user_insights and result.user_type == 'investor' %}
+              <div class="pi-insight" style="margin-top:10px;">
+                <div class="pi-insight-head">{{ p.user_insights.headline or '' }}</div>
+              </div>
+              {% endif %}
+
+              <hr class="pi-divider" />
+
+              <!-- Macro signals -->
+              {% if p.macro_signals %}
+              <div class="pi-section">
+                <div class="pi-section-label">Macro Signals</div>
+                <div class="macro-chips">
+                  <div class="macro-chip">
+                    <span class="mc-key">BoE Rate</span>
+                    <span class="mc-val">{{ p.macro_signals.boe_rate }}%</span>
+                    <span class="mc-trend {% if 'RISING' in (p.macro_signals.boe_direction or '') | upper %}trend-up{% elif 'FALLING' in (p.macro_signals.boe_direction or '') | upper %}trend-down{% else %}trend-hold{% endif %}">
+                      {{ p.macro_signals.boe_direction or '—' }}
+                    </span>
+                  </div>
+                  <div class="macro-chip">
+                    <span class="mc-key">Inflation</span>
+                    <span class="mc-val">{{ p.macro_signals.inflation_rate }}%</span>
+                    <span class="mc-trend {% if 'RISING' in (p.macro_signals.inflation_trend or '') | upper %}trend-up{% elif 'FALLING' in (p.macro_signals.inflation_trend or '') | upper %}trend-down{% else %}trend-hold{% endif %}">
+                      {{ p.macro_signals.inflation_trend or '—' }}
+                    </span>
+                  </div>
+                  <div class="macro-chip">
+                    <span class="mc-key">Season</span>
+                    <span class="mc-val">{{ p.macro_signals.season or '—' }}</span>
+                  </div>
+                  <div class="macro-chip">
+                    <span class="mc-key">Affordability</span>
+                    <span class="mc-val">{{ p.macro_signals.affordability or '—' }}</span>
+                  </div>
+                </div>
+              </div>
+              {% endif %}
+
+              <div class="pi-meta">{{ p.model_cycles }} learning cycles · Predictelligence Engine</div>
+
+            </div>
+          </div>
+        </div>
+
+        {% elif p and p.get('error') %}
+        <div class="pi-panel card-animate">
+          <div class="pi-inner">
+            <div class="pi-header">
+              <span class="pi-logo">⚡ Predictelligence Forecast</span>
+              <span class="badge badge-red">Error</span>
+            </div>
+            <div class="pi-body">
+              <div class="pi-warming" style="color:var(--red-dim);">
+                ⚠️ Engine error: {{ p.get('error', 'Unknown') }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {% else %}
+        <div class="pi-panel card-animate">
+          <div class="pi-inner">
+            <div class="pi-header">
+              <span class="pi-logo">⚡ Predictelligence Forecast</span>
+              <span class="badge badge-amber">Calibrating</span>
+            </div>
+            <div class="pi-body">
+              <div class="pi-warming">
+                🔮 Model is calibrating — predictions available after a few more learning cycles.
+                {% if p %}({{ p.model_cycles | default(0) }} / 3 cycles){% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+      </div><!-- .bento-right -->
+
+    </div><!-- .bento-grid -->
     {% endif %}
-  </main>
+
+    <p class="footer-text">
+      Predictelligence Property — Educational purposes only. Not financial advice or a professional valuation.
+    </p>
+
+  </div><!-- .container -->
+
 </body>
 </html>
